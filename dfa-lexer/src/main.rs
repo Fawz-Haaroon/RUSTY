@@ -1,7 +1,8 @@
+use std::collections::HashMap;
 use std::io::{self, Read};
 
 /*
-// LEXER
+LEXER
 */
 
 #[derive(Copy, Clone, PartialEq)]
@@ -148,7 +149,7 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
 }
 
 /*
-// AST
+AST
 */
 
 #[derive(Debug)]
@@ -163,7 +164,7 @@ enum Expr {
 }
 
 /*
-// PARSER
+PARSER
 */
 
 struct Parser {
@@ -215,7 +216,7 @@ impl Parser {
             };
 
             let (l_bp, r_bp) = match op {
-                '=' => (1, 0),             // right-associative
+                '=' => (1, 0),
                 '+' | '-' => (10, 11),
                 '*' | '/' => (20, 21),
                 _ => break,
@@ -226,7 +227,6 @@ impl Parser {
             }
 
             self.next();
-
             let right = self.parse_expression(r_bp)?;
 
             left = Expr::Binary {
@@ -241,39 +241,79 @@ impl Parser {
 }
 
 /*
-// DEBUG PRINT
+INTERPRETER
 */
 
-fn print_expr(expr: &Expr, indent: usize) {
-    let pad = "  ".repeat(indent);
-
+fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
     match expr {
-        Expr::Number(n) => println!("{}Number({})", pad, n),
-        Expr::Ident(s) => println!("{}Ident({})", pad, s),
+        Expr::Number(n) => Ok(*n),
+
+        Expr::Ident(name) => {
+            env.get(name)
+                .copied()
+                .ok_or_else(|| format!("undefined variable '{}'", name))
+        }
+
         Expr::Binary { op, left, right } => {
-            println!("{}Binary({})", pad, op);
-            print_expr(left, indent + 1);
-            print_expr(right, indent + 1);
+            if *op == '=' {
+                if let Expr::Ident(name) = &**left {
+                    let value = eval(right, env)?;
+                    env.insert(name.clone(), value);
+                    return Ok(value);
+                } else {
+                    return Err("left side of assignment must be identifier".into());
+                }
+            }
+
+            let l = eval(left, env)?;
+            let r = eval(right, env)?;
+
+            match op {
+                '+' => Ok(l + r),
+                '-' => Ok(l - r),
+                '*' => Ok(l * r),
+                '/' => Ok(l / r),
+                _ => Err("unknown operator".into()),
+            }
         }
     }
 }
 
 /*
-// MAIN
+MAIN
 */
-
 fn main() {
     let mut input = String::new();
     io::stdin().read_to_string(&mut input).unwrap();
 
-    match tokenize(&input) {
-        Ok(tokens) => {
-            let mut parser = Parser::new(tokens);
-            match parser.parse_expression(0) {
-                Ok(expr) => print_expr(&expr, 0),
-                Err(e) => eprintln!("parse error: {}", e),
+    let mut env = std::collections::HashMap::new();
+
+    for line in input.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        match tokenize(line) {
+            Ok(tokens) => {
+                let mut parser = Parser::new(tokens);
+                match parser.parse_expression(0) {
+                    Ok(expr) => match eval(&expr, &mut env) {
+                        Ok(value) => println!("{}", value),
+                        Err(e) => {
+                            eprintln!("runtime error: {}", e);
+                            break;
+                        }
+                    },
+                    Err(e) => {
+                        eprintln!("parse error: {}", e);
+                        break;
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("lex error: {}", e);
+                break;
             }
         }
-        Err(e) => eprintln!("lex error: {}", e),
     }
 }
