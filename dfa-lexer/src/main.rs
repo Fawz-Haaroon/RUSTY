@@ -1,3 +1,14 @@
+#[derive(Copy, Clone, Debug, PartialEq)]
+enum State {
+    Start,
+    Ident,
+    Number,
+    Operator,
+    LParen,
+    RParen,
+    Error,
+}
+
 use std::io::{self, Read};
 
 fn main() {
