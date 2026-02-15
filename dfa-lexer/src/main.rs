@@ -1,13 +1,26 @@
-#[derive(Copy, Clone, Debug, PartialEq)]
-enum State {
-    Start,
-    Ident,
-    Number,
+#[derive(Copy, Clone, Debug)]
+enum Class {
+    Letter,
+    Digit,
     Operator,
     LParen,
     RParen,
-    Error,
+    Whitespace,
+    Other,
 }
+
+fn classify(c: char) -> Class {
+    match c {
+        'a'..='z' | 'A'..='Z' | '_' => Class::Letter,
+        '0'..='9' => Class::Digit,
+        '+' | '-' | '*' | '/' | '=' => Class::Operator,
+        '(' => Class::LParen,
+        ')' => Class::RParen,
+        ' ' | '\n' | '\t' | '\r' => Class::Whitespace,
+        _ => Class::Other,
+    }
+}
+
 
 use std::io::{self, Read};
 
