@@ -54,56 +54,37 @@ const C_WHITESPACE: usize = 5;
 const C_OTHER: usize = 6;
 
 const TRANSITIONS: [[State; CLASS_COUNT]; STATE_COUNT] = [
-    // Start
     [
-        State::Ident,     // Letter
-        State::Number,    // Digit
-        State::Operator,  // Operator
-        State::LParen,    // LParen
-        State::RParen,    // RParen
-        State::Start,     // Whitespace
-        State::Error,     // Other
+        State::Ident,
+        State::Number,
+        State::Operator,
+        State::LParen,
+        State::RParen,
+        State::Start,
+        State::Error,
     ],
-    // Ident
     [
-        State::Ident,     // Letter
-        State::Ident,     // Digit
-        State::Error,     // Operator
-        State::Error,     // LParen
-        State::Error,     // RParen
-        State::Error,     // Whitespace
-        State::Error,     // Other
+        State::Ident,
+        State::Ident,
+        State::Error,
+        State::Error,
+        State::Error,
+        State::Error,
+        State::Error,
     ],
-    // Number
     [
-        State::Error,     // Letter
-        State::Number,    // Digit
-        State::Error,     // Operator
-        State::Error,     // LParen
-        State::Error,     // RParen
-        State::Error,     // Whitespace
-        State::Error,     // Other
+        State::Error,
+        State::Number,
+        State::Error,
+        State::Error,
+        State::Error,
+        State::Error,
+        State::Error,
     ],
-    // Operator (single-char)
-    [
-        State::Error, State::Error, State::Error,
-        State::Error, State::Error, State::Error, State::Error,
-    ],
-    // LParen (single-char)
-    [
-        State::Error, State::Error, State::Error,
-        State::Error, State::Error, State::Error, State::Error,
-    ],
-    // RParen (single-char)
-    [
-        State::Error, State::Error, State::Error,
-        State::Error, State::Error, State::Error, State::Error,
-    ],
-    // Error
-    [
-        State::Error, State::Error, State::Error,
-        State::Error, State::Error, State::Error, State::Error,
-    ],
+    [State::Error; CLASS_COUNT],
+    [State::Error; CLASS_COUNT],
+    [State::Error; CLASS_COUNT],
+    [State::Error; CLASS_COUNT],
 ];
 
 fn state_index(s: State) -> usize {
@@ -128,6 +109,22 @@ fn class_index(c: Class) -> usize {
         Class::Whitespace => C_WHITESPACE,
         Class::Other => C_OTHER,
     }
+}
+
+#[derive(Debug)]
+enum TokenKind {
+    Ident,
+    Number,
+    Operator(char),
+    LParen,
+    RParen,
+}
+
+#[derive(Debug)]
+struct Token {
+    kind: TokenKind,
+    start: usize,
+    end: usize,
 }
 
 fn main() {
