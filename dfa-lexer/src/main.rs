@@ -130,4 +130,93 @@ struct Token {
 fn main() {
     let mut input = String::new();
     io::stdin().read_to_string(&mut input).unwrap();
+
+    let bytes: Vec<char> = input.chars().collect();
+    let mut i = 0;
+
+    let mut state = State::Start;
+    let mut start = 0;
+
+    let mut tokens: Vec<Token> = Vec::new();
+
+    while i < bytes.len() {
+        let c = bytes[i];
+        let class = classify(c);
+
+        let next = TRANSITIONS[state_index(state)][class_index(class)];
+
+        if next == State::Error {
+            match state {
+                State::Ident => {
+                    tokens.push(Token {
+                        kind: TokenKind::Ident,
+                        start,
+                        end: i,
+                    });
+                }
+                State::Number => {
+                    tokens.push(Token {
+                        kind: TokenKind::Number,
+                        start,
+                        end: i,
+                    });
+                }
+                State::Operator => {
+                    tokens.push(Token {
+                        kind: TokenKind::Operator(bytes[start]),
+                        start,
+                        end: start + 1,
+                    });
+                }
+                State::LParen => {
+                    tokens.push(Token {
+                        kind: TokenKind::LParen,
+                        start,
+                        end: start + 1,
+                    });
+                }
+                State::RParen => {
+                    tokens.push(Token {
+                        kind: TokenKind::RParen,
+                        start,
+                        end: start + 1,
+                    });
+                }
+                State::Start => {
+                    i += 1;
+                }
+                State::Error => {
+                    panic!("invalid character at {}", i);
+                }
+            }
+
+            state = State::Start;
+            start = i;
+            continue;
+        }
+
+        if state == State::Start && next != State::Start {
+            start = i;
+        }
+
+        state = next;
+        i += 1;
+    }
+
+    match state {
+        State::Ident => tokens.push(Token { kind: TokenKind::Ident, start, end: i }),
+        State::Number => tokens.push(Token { kind: TokenKind::Number, start, end: i }),
+        State::Operator => tokens.push(Token {
+            kind: TokenKind::Operator(bytes[start]),
+            start,
+            end: start + 1,
+        }),
+        State::LParen => tokens.push(Token { kind: TokenKind::LParen, start, end: start + 1 }),
+        State::RParen => tokens.push(Token { kind: TokenKind::RParen, start, end: start + 1 }),
+        _ => {}
+    }
+
+    for t in tokens {
+        println!("{:?}", t);
+    }
 }
