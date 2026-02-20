@@ -1,6 +1,6 @@
 use std::io::{self, Read};
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 enum State {
     Start,
     Ident,
@@ -11,7 +11,6 @@ enum State {
     Error,
 }
 
-#[derive(Copy, Clone, Debug)]
 enum Class {
     Letter,
     Digit,
@@ -37,22 +36,6 @@ fn classify(c: char) -> Class {
 const STATE_COUNT: usize = 7;
 const CLASS_COUNT: usize = 7;
 
-const S_START: usize = 0;
-const S_IDENT: usize = 1;
-const S_NUMBER: usize = 2;
-const S_OPERATOR: usize = 3;
-const S_LPAREN: usize = 4;
-const S_RPAREN: usize = 5;
-const S_ERROR: usize = 6;
-
-const C_LETTER: usize = 0;
-const C_DIGIT: usize = 1;
-const C_OPERATOR: usize = 2;
-const C_LPAREN: usize = 3;
-const C_RPAREN: usize = 4;
-const C_WHITESPACE: usize = 5;
-const C_OTHER: usize = 6;
-
 const TRANSITIONS: [[State; CLASS_COUNT]; STATE_COUNT] = [
     [State::Ident, State::Number, State::Operator, State::LParen, State::RParen, State::Start, State::Error],
     [State::Ident, State::Ident, State::Error, State::Error, State::Error, State::Error, State::Error],
@@ -64,26 +47,18 @@ const TRANSITIONS: [[State; CLASS_COUNT]; STATE_COUNT] = [
 ];
 
 fn state_index(s: State) -> usize {
-    match s {
-        State::Start => S_START,
-        State::Ident => S_IDENT,
-        State::Number => S_NUMBER,
-        State::Operator => S_OPERATOR,
-        State::LParen => S_LPAREN,
-        State::RParen => S_RPAREN,
-        State::Error => S_ERROR,
-    }
+    s as usize
 }
 
 fn class_index(c: Class) -> usize {
     match c {
-        Class::Letter => C_LETTER,
-        Class::Digit => C_DIGIT,
-        Class::Operator => C_OPERATOR,
-        Class::LParen => C_LPAREN,
-        Class::RParen => C_RPAREN,
-        Class::Whitespace => C_WHITESPACE,
-        Class::Other => C_OTHER,
+        Class::Letter => 0,
+        Class::Digit => 1,
+        Class::Operator => 2,
+        Class::LParen => 3,
+        Class::RParen => 4,
+        Class::Whitespace => 5,
+        Class::Other => 6,
     }
 }
 
@@ -110,7 +85,7 @@ fn main() {
 
     let mut state = State::Start;
     let mut start = 0;
-    let mut tokens: Vec<Token> = Vec::new();
+    let mut tokens = Vec::new();
 
     while i < chars.len() {
         let next = TRANSITIONS[state_index(state)][class_index(classify(chars[i]))];
@@ -126,11 +101,12 @@ fn main() {
                 }),
                 State::LParen => tokens.push(Token { kind: TokenKind::LParen, start, end: start + 1 }),
                 State::RParen => tokens.push(Token { kind: TokenKind::RParen, start, end: start + 1 }),
-                State::Start => {
-                    i += 1;
+                State::Start | State::Error => {
+                    eprintln!("invalid character '{}' at position {}", chars[i], i);
+                    return;
                 }
-                State::Error => unreachable!(),
             }
+
             state = State::Start;
             start = i;
             continue;
