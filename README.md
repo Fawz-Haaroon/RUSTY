@@ -9,6 +9,7 @@ This repository contains multiple **independent Rust projects**, each living in 
 - guessing_game — terminal number guessing game
 - pwd-gen-rater — password generator with strength rating
 - radix-base-convertor — number base / radix converter
+- dfa-lexer — table-driven lexical analyzer (no regex, no crates)
 
 Each folder is a standalone Cargo project.
 
