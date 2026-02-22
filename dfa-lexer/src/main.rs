@@ -62,9 +62,17 @@ fn class_index(c: Class) -> usize {
     }
 }
 
+enum Keyword {
+    If,
+    Else,
+    While,
+    Return,
+}
+
 enum TokenKind {
     Ident,
     Number,
+    Keyword(Keyword),
     Operator(char),
     LParen,
     RParen,
@@ -76,6 +84,16 @@ struct Token {
     end: usize,
 }
 
+fn classify_keyword(s: &str) -> Option<Keyword> {
+    match s {
+        "if" => Some(Keyword::If),
+        "else" => Some(Keyword::Else),
+        "while" => Some(Keyword::While),
+        "return" => Some(Keyword::Return),
+        _ => None,
+    }
+}
+
 fn main() {
     let mut input = String::new();
     io::stdin().read_to_string(&mut input).unwrap();
@@ -85,22 +103,37 @@ fn main() {
 
     let mut state = State::Start;
     let mut start = 0;
-    let mut tokens = Vec::new();
+    let mut tokens: Vec<Token> = Vec::new();
 
     while i < chars.len() {
         let next = TRANSITIONS[state_index(state)][class_index(classify(chars[i]))];
 
         if next == State::Error {
             match state {
-                State::Ident => tokens.push(Token { kind: TokenKind::Ident, start, end: i }),
-                State::Number => tokens.push(Token { kind: TokenKind::Number, start, end: i }),
-                State::Operator => tokens.push(Token {
-                    kind: TokenKind::Operator(chars[start]),
-                    start,
-                    end: start + 1,
-                }),
-                State::LParen => tokens.push(Token { kind: TokenKind::LParen, start, end: start + 1 }),
-                State::RParen => tokens.push(Token { kind: TokenKind::RParen, start, end: start + 1 }),
+                State::Ident => {
+                    let text: String = chars[start..i].iter().collect();
+                    let kind = match classify_keyword(&text) {
+                        Some(k) => TokenKind::Keyword(k),
+                        None => TokenKind::Ident,
+                    };
+                    tokens.push(Token { kind, start, end: i });
+                }
+                State::Number => {
+                    tokens.push(Token { kind: TokenKind::Number, start, end: i });
+                }
+                State::Operator => {
+                    tokens.push(Token {
+                        kind: TokenKind::Operator(chars[start]),
+                        start,
+                        end: start + 1,
+                    });
+                }
+                State::LParen => {
+                    tokens.push(Token { kind: TokenKind::LParen, start, end: start + 1 });
+                }
+                State::RParen => {
+                    tokens.push(Token { kind: TokenKind::RParen, start, end: start + 1 });
+                }
                 State::Start | State::Error => {
                     eprintln!("invalid character '{}' at position {}", chars[i], i);
                     return;
@@ -122,7 +155,14 @@ fn main() {
 
     if state != State::Start {
         match state {
-            State::Ident => tokens.push(Token { kind: TokenKind::Ident, start, end: i }),
+            State::Ident => {
+                let text: String = chars[start..i].iter().collect();
+                let kind = match classify_keyword(&text) {
+                    Some(k) => TokenKind::Keyword(k),
+                    None => TokenKind::Ident,
+                };
+                tokens.push(Token { kind, start, end: i });
+            }
             State::Number => tokens.push(Token { kind: TokenKind::Number, start, end: i }),
             State::Operator => tokens.push(Token {
                 kind: TokenKind::Operator(chars[start]),
@@ -139,6 +179,10 @@ fn main() {
         match t.kind {
             TokenKind::Ident => println!("IDENT   [{}..{}]", t.start, t.end),
             TokenKind::Number => println!("NUMBER  [{}..{}]", t.start, t.end),
+            TokenKind::Keyword(Keyword::If) => println!("KW if    [{}..{}]", t.start, t.end),
+            TokenKind::Keyword(Keyword::Else) => println!("KW else  [{}..{}]", t.start, t.end),
+            TokenKind::Keyword(Keyword::While) => println!("KW while [{}..{}]", t.start, t.end),
+            TokenKind::Keyword(Keyword::Return) => println!("KW return [{}..{}]", t.start, t.end),
             TokenKind::Operator(op) => println!("OP '{}' [{}..{}]", op, t.start, t.end),
             TokenKind::LParen => println!("LPAREN  [{}..{}]", t.start, t.end),
             TokenKind::RParen => println!("RPAREN  [{}..{}]", t.start, t.end),
