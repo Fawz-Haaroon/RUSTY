@@ -94,10 +94,7 @@ fn classify_keyword(s: &str) -> Option<Keyword> {
     }
 }
 
-fn main() {
-    let mut input = String::new();
-    io::stdin().read_to_string(&mut input).unwrap();
-
+fn tokenize(input: &str) -> Result<Vec<Token>, String> {
     let chars: Vec<char> = input.chars().collect();
     let mut i = 0;
 
@@ -127,8 +124,7 @@ fn main() {
                 State::LParen => tokens.push(Token { kind: TokenKind::LParen, start, end: start + 1 }),
                 State::RParen => tokens.push(Token { kind: TokenKind::RParen, start, end: start + 1 }),
                 State::Start | State::Error => {
-                    eprintln!("invalid character '{}' at position {}", chars[i], i);
-                    return;
+                    return Err(format!("invalid character '{}' at position {}", chars[i], i));
                 }
             }
 
@@ -167,19 +163,22 @@ fn main() {
         }
     }
 
-    for t in tokens {
-        let lexeme = &input[t.start..t.end];
+    Ok(tokens)
+}
 
-        match t.kind {
-            TokenKind::Ident => println!("IDENT   {:<8} [{}..{}]", lexeme, t.start, t.end),
-            TokenKind::Number => println!("NUMBER  {:<8} [{}..{}]", lexeme, t.start, t.end),
-            TokenKind::Keyword(Keyword::If) => println!("KW if    {:<8} [{}..{}]", lexeme, t.start, t.end),
-            TokenKind::Keyword(Keyword::Else) => println!("KW else  {:<8} [{}..{}]", lexeme, t.start, t.end),
-            TokenKind::Keyword(Keyword::While) => println!("KW while {:<8} [{}..{}]", lexeme, t.start, t.end),
-            TokenKind::Keyword(Keyword::Return) => println!("KW return {:<8} [{}..{}]", lexeme, t.start, t.end),
-            TokenKind::Operator(op) => println!("OP '{}'  {:<8} [{}..{}]", op, lexeme, t.start, t.end),
-            TokenKind::LParen => println!("LPAREN  {:<8} [{}..{}]", lexeme, t.start, t.end),
-            TokenKind::RParen => println!("RPAREN  {:<8} [{}..{}]", lexeme, t.start, t.end),
+fn main() {
+    let mut input = String::new();
+    io::stdin().read_to_string(&mut input).unwrap();
+
+    match tokenize(&input) {
+        Ok(tokens) => {
+            for t in tokens {
+                let lexeme = &input[t.start..t.end];
+                println!("[{}..{}] {}", t.start, t.end, lexeme);
+            }
+        }
+        Err(e) => {
+            eprintln!("{}", e);
         }
     }
 }
