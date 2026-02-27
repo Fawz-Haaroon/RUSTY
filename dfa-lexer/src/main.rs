@@ -62,17 +62,9 @@ fn class_index(c: Class) -> usize {
     }
 }
 
-enum Keyword {
-    If,
-    Else,
-    While,
-    Return,
-}
-
 enum TokenKind {
-    Ident,
-    Number,
-    Keyword(Keyword),
+    Ident(String),
+    Number(i64),
     Operator(char),
     LParen,
     RParen,
@@ -80,27 +72,14 @@ enum TokenKind {
 
 struct Token {
     kind: TokenKind,
-    start: usize,
-    end: usize,
-}
-
-fn classify_keyword(s: &str) -> Option<Keyword> {
-    match s {
-        "if" => Some(Keyword::If),
-        "else" => Some(Keyword::Else),
-        "while" => Some(Keyword::While),
-        "return" => Some(Keyword::Return),
-        _ => None,
-    }
 }
 
 fn tokenize(input: &str) -> Result<Vec<Token>, String> {
     let chars: Vec<char> = input.chars().collect();
     let mut i = 0;
-
     let mut state = State::Start;
     let mut start = 0;
-    let mut tokens: Vec<Token> = Vec::new();
+    let mut tokens = Vec::new();
 
     while i < chars.len() {
         let next = TRANSITIONS[state_index(state)][class_index(classify(chars[i]))];
@@ -109,22 +88,20 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
             match state {
                 State::Ident => {
                     let text: String = chars[start..i].iter().collect();
-                    let kind = match classify_keyword(&text) {
-                        Some(k) => TokenKind::Keyword(k),
-                        None => TokenKind::Ident,
-                    };
-                    tokens.push(Token { kind, start, end: i });
+                    tokens.push(Token { kind: TokenKind::Ident(text) });
                 }
-                State::Number => tokens.push(Token { kind: TokenKind::Number, start, end: i }),
-                State::Operator => tokens.push(Token {
-                    kind: TokenKind::Operator(chars[start]),
-                    start,
-                    end: start + 1,
-                }),
-                State::LParen => tokens.push(Token { kind: TokenKind::LParen, start, end: start + 1 }),
-                State::RParen => tokens.push(Token { kind: TokenKind::RParen, start, end: start + 1 }),
+                State::Number => {
+                    let text: String = chars[start..i].iter().collect();
+                    let value = text.parse::<i64>().unwrap();
+                    tokens.push(Token { kind: TokenKind::Number(value) });
+                }
+                State::Operator => {
+                    tokens.push(Token { kind: TokenKind::Operator(chars[start]) });
+                }
+                State::LParen => tokens.push(Token { kind: TokenKind::LParen }),
+                State::RParen => tokens.push(Token { kind: TokenKind::RParen }),
                 State::Start | State::Error => {
-                    return Err(format!("invalid character '{}' at position {}", chars[i], i));
+                    return Err(format!("invalid character '{}' at {}", chars[i], i));
                 }
             }
 
@@ -145,25 +122,115 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
         match state {
             State::Ident => {
                 let text: String = chars[start..i].iter().collect();
-                let kind = match classify_keyword(&text) {
-                    Some(k) => TokenKind::Keyword(k),
-                    None => TokenKind::Ident,
-                };
-                tokens.push(Token { kind, start, end: i });
+                tokens.push(Token { kind: TokenKind::Ident(text) });
             }
-            State::Number => tokens.push(Token { kind: TokenKind::Number, start, end: i }),
-            State::Operator => tokens.push(Token {
-                kind: TokenKind::Operator(chars[start]),
-                start,
-                end: start + 1,
-            }),
-            State::LParen => tokens.push(Token { kind: TokenKind::LParen, start, end: start + 1 }),
-            State::RParen => tokens.push(Token { kind: TokenKind::RParen, start, end: start + 1 }),
+            State::Number => {
+                let text: String = chars[start..i].iter().collect();
+                let value = text.parse::<i64>().unwrap();
+                tokens.push(Token { kind: TokenKind::Number(value) });
+            }
+            State::Operator => {
+                tokens.push(Token { kind: TokenKind::Operator(chars[start]) });
+            }
+            State::LParen => tokens.push(Token { kind: TokenKind::LParen }),
+            State::RParen => tokens.push(Token { kind: TokenKind::RParen }),
             _ => {}
         }
     }
 
     Ok(tokens)
+}
+
+enum Expr {
+    Number(i64),
+    Ident(String),
+    Binary {
+        op: char,
+        left: Box<Expr>,
+        right: Box<Expr>,
+    },
+}
+
+struct Parser {
+    tokens: Vec<Token>,
+    pos: usize,
+}
+
+impl Parser {
+    fn new(tokens: Vec<Token>) -> Self {
+        Self { tokens, pos: 0 }
+    }
+
+    fn peek(&self) -> Option<&TokenKind> {
+        self.tokens.get(self.pos).map(|t| &t.kind)
+    }
+
+    fn next(&mut self) -> Option<TokenKind> {
+        if self.pos >= self.tokens.len() {
+            return None;
+        }
+        let token = std::mem::replace(&mut self.tokens[self.pos].kind, TokenKind::LParen);
+        self.pos += 1;
+        Some(token)
+    }
+
+    fn parse_expression(&mut self, min_bp: u8) -> Result<Expr, String> {
+        let mut left = match self.next() {
+            Some(TokenKind::Number(n)) => Expr::Number(n),
+            Some(TokenKind::Ident(s)) => Expr::Ident(s),
+            Some(TokenKind::LParen) => {
+                let expr = self.parse_expression(0)?;
+                match self.next() {
+                    Some(TokenKind::RParen) => expr,
+                    _ => return Err("expected ')'".into()),
+                }
+            }
+            _ => return Err("unexpected token".into()),
+        };
+
+        loop {
+            let op = match self.peek() {
+                Some(TokenKind::Operator(op)) => *op,
+                _ => break,
+            };
+
+            let (l_bp, r_bp) = match op {
+                '+' | '-' => (10, 11),
+                '*' | '/' => (20, 21),
+                _ => break,
+            };
+
+            if l_bp < min_bp {
+                break;
+            }
+
+            self.next();
+
+            let right = self.parse_expression(r_bp)?;
+
+            left = Expr::Binary {
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
+    }
+}
+
+fn print_expr(expr: &Expr, indent: usize) {
+    let pad = "  ".repeat(indent);
+
+    match expr {
+        Expr::Number(n) => println!("{}Number({})", pad, n),
+        Expr::Ident(s) => println!("{}Ident({})", pad, s),
+        Expr::Binary { op, left, right } => {
+            println!("{}Binary({})", pad, op);
+            print_expr(left, indent + 1);
+            print_expr(right, indent + 1);
+        }
+    }
 }
 
 fn main() {
@@ -172,13 +239,12 @@ fn main() {
 
     match tokenize(&input) {
         Ok(tokens) => {
-            for t in tokens {
-                let lexeme = &input[t.start..t.end];
-                println!("[{}..{}] {}", t.start, t.end, lexeme);
+            let mut parser = Parser::new(tokens);
+            match parser.parse_expression(0) {
+                Ok(expr) => print_expr(&expr, 0),
+                Err(e) => eprintln!("parse error: {}", e),
             }
         }
-        Err(e) => {
-            eprintln!("{}", e);
-        }
+        Err(e) => eprintln!("{}", e),
     }
 }
