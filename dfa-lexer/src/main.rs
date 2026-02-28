@@ -1,5 +1,9 @@
 use std::io::{self, Read};
 
+/*
+// LEXER
+*/
+
 #[derive(Copy, Clone, PartialEq)]
 enum State {
     Start,
@@ -62,6 +66,7 @@ fn class_index(c: Class) -> usize {
     }
 }
 
+#[derive(Debug)]
 enum TokenKind {
     Ident(String),
     Number(i64),
@@ -70,6 +75,7 @@ enum TokenKind {
     RParen,
 }
 
+#[derive(Debug)]
 struct Token {
     kind: TokenKind,
 }
@@ -92,7 +98,7 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 }
                 State::Number => {
                     let text: String = chars[start..i].iter().collect();
-                    let value = text.parse::<i64>().unwrap();
+                    let value = text.parse::<i64>().map_err(|_| "invalid number")?;
                     tokens.push(Token { kind: TokenKind::Number(value) });
                 }
                 State::Operator => {
@@ -126,7 +132,7 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
             }
             State::Number => {
                 let text: String = chars[start..i].iter().collect();
-                let value = text.parse::<i64>().unwrap();
+                let value = text.parse::<i64>().map_err(|_| "invalid number")?;
                 tokens.push(Token { kind: TokenKind::Number(value) });
             }
             State::Operator => {
@@ -141,6 +147,11 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
     Ok(tokens)
 }
 
+/*
+// AST
+*/
+
+#[derive(Debug)]
 enum Expr {
     Number(i64),
     Ident(String),
@@ -150,6 +161,10 @@ enum Expr {
         right: Box<Expr>,
     },
 }
+
+/*
+// PARSER
+*/
 
 struct Parser {
     tokens: Vec<Token>,
@@ -169,7 +184,12 @@ impl Parser {
         if self.pos >= self.tokens.len() {
             return None;
         }
-        let token = std::mem::replace(&mut self.tokens[self.pos].kind, TokenKind::LParen);
+
+        let token = std::mem::replace(
+            &mut self.tokens[self.pos].kind,
+            TokenKind::LParen,
+        );
+
         self.pos += 1;
         Some(token)
     }
@@ -195,6 +215,7 @@ impl Parser {
             };
 
             let (l_bp, r_bp) = match op {
+                '=' => (1, 0),             // right-associative
                 '+' | '-' => (10, 11),
                 '*' | '/' => (20, 21),
                 _ => break,
@@ -219,6 +240,10 @@ impl Parser {
     }
 }
 
+/*
+// DEBUG PRINT
+*/
+
 fn print_expr(expr: &Expr, indent: usize) {
     let pad = "  ".repeat(indent);
 
@@ -233,6 +258,10 @@ fn print_expr(expr: &Expr, indent: usize) {
     }
 }
 
+/*
+// MAIN
+*/
+
 fn main() {
     let mut input = String::new();
     io::stdin().read_to_string(&mut input).unwrap();
@@ -245,6 +274,6 @@ fn main() {
                 Err(e) => eprintln!("parse error: {}", e),
             }
         }
-        Err(e) => eprintln!("{}", e),
+        Err(e) => eprintln!("lex error: {}", e),
     }
 }
