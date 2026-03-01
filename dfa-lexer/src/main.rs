@@ -156,6 +156,10 @@ AST
 enum Expr {
     Number(i64),
     Ident(String),
+    Unary {
+        op: char,
+        expr: Box<Expr>,
+    },
     Binary {
         op: char,
         left: Box<Expr>,
@@ -198,7 +202,17 @@ impl Parser {
     fn parse_expression(&mut self, min_bp: u8) -> Result<Expr, String> {
         let mut left = match self.next() {
             Some(TokenKind::Number(n)) => Expr::Number(n),
+
             Some(TokenKind::Ident(s)) => Expr::Ident(s),
+
+            Some(TokenKind::Operator(op)) if op == '-' || op == '+' => {
+                let expr = self.parse_expression(30)?;
+                Expr::Unary {
+                    op,
+                    expr: Box::new(expr),
+                }
+            }
+
             Some(TokenKind::LParen) => {
                 let expr = self.parse_expression(0)?;
                 match self.next() {
@@ -206,6 +220,7 @@ impl Parser {
                     _ => return Err("expected ')'".into()),
                 }
             }
+
             _ => return Err("unexpected token".into()),
         };
 
@@ -254,6 +269,15 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
                 .ok_or_else(|| format!("undefined variable '{}'", name))
         }
 
+        Expr::Unary { op, expr } => {
+            let v = eval(expr, env)?;
+            match op {
+                '-' => Ok(-v),
+                '+' => Ok(v),
+                _ => Err("unknown unary operator".into()),
+            }
+        }
+
         Expr::Binary { op, left, right } => {
             if *op == '=' {
                 if let Expr::Ident(name) = &**left {
@@ -282,11 +306,12 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
 /*
 MAIN
 */
+
 fn main() {
     let mut input = String::new();
     io::stdin().read_to_string(&mut input).unwrap();
 
-    let mut env = std::collections::HashMap::new();
+    let mut env: HashMap<String, i64> = HashMap::new();
 
     for line in input.lines() {
         if line.trim().is_empty() {
