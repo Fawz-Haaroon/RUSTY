@@ -1,10 +1,6 @@
 use std::collections::HashMap;
 use std::io::{self, Read};
 
-/*
-LEXER
-*/
-
 #[derive(Copy, Clone, PartialEq)]
 enum State {
     Start,
@@ -30,7 +26,7 @@ fn classify(c: char) -> Class {
     match c {
         'a'..='z' | 'A'..='Z' | '_' => Class::Letter,
         '0'..='9' => Class::Digit,
-        '+' | '-' | '*' | '/' | '=' => Class::Operator,
+        '+' | '-' | '*' | '/' | '=' | '<' | '>' => Class::Operator,
         '(' => Class::LParen,
         ')' => Class::RParen,
         ' ' | '\n' | '\t' | '\r' => Class::Whitespace,
@@ -148,10 +144,6 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
     Ok(tokens)
 }
 
-/*
-AST
-*/
-
 #[derive(Debug)]
 enum Expr {
     Number(i64),
@@ -166,10 +158,6 @@ enum Expr {
         right: Box<Expr>,
     },
 }
-
-/*
-PARSER
-*/
 
 struct Parser {
     tokens: Vec<Token>,
@@ -202,7 +190,6 @@ impl Parser {
     fn parse_expression(&mut self, min_bp: u8) -> Result<Expr, String> {
         let mut left = match self.next() {
             Some(TokenKind::Number(n)) => Expr::Number(n),
-
             Some(TokenKind::Ident(s)) => Expr::Ident(s),
 
             Some(TokenKind::Operator(op)) if op == '-' || op == '+' => {
@@ -232,6 +219,7 @@ impl Parser {
 
             let (l_bp, r_bp) = match op {
                 '=' => (1, 0),
+                '<' | '>' => (5, 6),
                 '+' | '-' => (10, 11),
                 '*' | '/' => (20, 21),
                 _ => break,
@@ -254,10 +242,6 @@ impl Parser {
         Ok(left)
     }
 }
-
-/*
-INTERPRETER
-*/
 
 fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
     match expr {
@@ -297,15 +281,13 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
                 '-' => Ok(l - r),
                 '*' => Ok(l * r),
                 '/' => Ok(l / r),
+                '<' => Ok((l < r) as i64),
+                '>' => Ok((l > r) as i64),
                 _ => Err("unknown operator".into()),
             }
         }
     }
 }
-
-/*
-MAIN
-*/
 
 fn main() {
     let mut input = String::new();
