@@ -26,7 +26,7 @@ fn classify(c: char) -> Class {
     match c {
         'a'..='z' | 'A'..='Z' | '_' => Class::Letter,
         '0'..='9' => Class::Digit,
-        '+' | '-' | '*' | '/' | '=' | '<' | '>' => Class::Operator,
+        '+' | '-' | '*' | '/' | '=' | '<' | '>' | '!' => Class::Operator,
         '(' => Class::LParen,
         ')' => Class::RParen,
         ' ' | '\n' | '\t' | '\r' => Class::Whitespace,
@@ -67,7 +67,7 @@ fn class_index(c: Class) -> usize {
 enum TokenKind {
     Ident(String),
     Number(i64),
-    Operator(char),
+    Operator(String),
     LParen,
     RParen,
 }
@@ -80,64 +80,119 @@ struct Token {
 fn tokenize(input: &str) -> Result<Vec<Token>, String> {
     let chars: Vec<char> = input.chars().collect();
     let mut i = 0;
-    let mut state = State::Start;
-    let mut start = 0;
     let mut tokens = Vec::new();
 
     while i < chars.len() {
-        let next = TRANSITIONS[state_index(state)][class_index(classify(chars[i]))];
-
-        if next == State::Error {
-            match state {
-                State::Ident => {
-                    let text: String = chars[start..i].iter().collect();
-                    tokens.push(Token { kind: TokenKind::Ident(text) });
-                }
-                State::Number => {
-                    let text: String = chars[start..i].iter().collect();
-                    let value = text.parse::<i64>().map_err(|_| "invalid number")?;
-                    tokens.push(Token { kind: TokenKind::Number(value) });
-                }
-                State::Operator => {
-                    tokens.push(Token { kind: TokenKind::Operator(chars[start]) });
-                }
-                State::LParen => tokens.push(Token { kind: TokenKind::LParen }),
-                State::RParen => tokens.push(Token { kind: TokenKind::RParen }),
-                State::Start | State::Error => {
-                    return Err(format!("invalid character '{}' at {}", chars[i], i));
-                }
+        match chars[i] {
+            ' ' | '\n' | '\t' | '\r' => {
+                i += 1;
             }
 
-            state = State::Start;
-            start = i;
-            continue;
-        }
+            'a'..='z' | 'A'..='Z' | '_' => {
+                let start = i;
+                while i < chars.len()
+                    && matches!(chars[i], 'a'..='z' | 'A'..='Z' | '_' | '0'..='9')
+                {
+                    i += 1;
+                }
 
-        if state == State::Start && next != State::Start {
-            start = i;
-        }
-
-        state = next;
-        i += 1;
-    }
-
-    if state != State::Start {
-        match state {
-            State::Ident => {
                 let text: String = chars[start..i].iter().collect();
-                tokens.push(Token { kind: TokenKind::Ident(text) });
+                tokens.push(Token {
+                    kind: TokenKind::Ident(text),
+                });
             }
-            State::Number => {
+
+            '0'..='9' => {
+                let start = i;
+                while i < chars.len() && matches!(chars[i], '0'..='9') {
+                    i += 1;
+                }
+
                 let text: String = chars[start..i].iter().collect();
                 let value = text.parse::<i64>().map_err(|_| "invalid number")?;
-                tokens.push(Token { kind: TokenKind::Number(value) });
+
+                tokens.push(Token {
+                    kind: TokenKind::Number(value),
+                });
             }
-            State::Operator => {
-                tokens.push(Token { kind: TokenKind::Operator(chars[start]) });
+
+            '(' => {
+                tokens.push(Token {
+                    kind: TokenKind::LParen,
+                });
+                i += 1;
             }
-            State::LParen => tokens.push(Token { kind: TokenKind::LParen }),
-            State::RParen => tokens.push(Token { kind: TokenKind::RParen }),
-            _ => {}
+
+            ')' => {
+                tokens.push(Token {
+                    kind: TokenKind::RParen,
+                });
+                i += 1;
+            }
+
+            '+' | '-' | '*' | '/' => {
+                tokens.push(Token {
+                    kind: TokenKind::Operator(chars[i].to_string()),
+                });
+                i += 1;
+            }
+
+            '=' => {
+                if i + 1 < chars.len() && chars[i + 1] == '=' {
+                    tokens.push(Token {
+                        kind: TokenKind::Operator("==".into()),
+                    });
+                    i += 2;
+                } else {
+                    tokens.push(Token {
+                        kind: TokenKind::Operator("=".into()),
+                    });
+                    i += 1;
+                }
+            }
+
+            '!' => {
+                if i + 1 < chars.len() && chars[i + 1] == '=' {
+                    tokens.push(Token {
+                        kind: TokenKind::Operator("!=".into()),
+                    });
+                    i += 2;
+                } else {
+                    return Err("unexpected '!'".into());
+                }
+            }
+
+            '<' => {
+                if i + 1 < chars.len() && chars[i + 1] == '=' {
+                    tokens.push(Token {
+                        kind: TokenKind::Operator("<=".into()),
+                    });
+                    i += 2;
+                } else {
+                    tokens.push(Token {
+                        kind: TokenKind::Operator("<".into()),
+                    });
+                    i += 1;
+                }
+            }
+
+            '>' => {
+                if i + 1 < chars.len() && chars[i + 1] == '=' {
+                    tokens.push(Token {
+                        kind: TokenKind::Operator(">=".into()),
+                    });
+                    i += 2;
+                } else {
+                    tokens.push(Token {
+                        kind: TokenKind::Operator(">".into()),
+                    });
+                    i += 1;
+                }
+            }
+
+            _ => {
+                return Err(format!("invalid character '{}'", chars[i]));
+            }
         }
     }
 
@@ -148,12 +203,14 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
 enum Expr {
     Number(i64),
     Ident(String),
+
     Unary {
-        op: char,
+        op: String,
         expr: Box<Expr>,
     },
+
     Binary {
-        op: char,
+        op: String,
         left: Box<Expr>,
         right: Box<Expr>,
     },
@@ -190,9 +247,10 @@ impl Parser {
     fn parse_expression(&mut self, min_bp: u8) -> Result<Expr, String> {
         let mut left = match self.next() {
             Some(TokenKind::Number(n)) => Expr::Number(n),
+
             Some(TokenKind::Ident(s)) => Expr::Ident(s),
 
-            Some(TokenKind::Operator(op)) if op == '-' || op == '+' => {
+            Some(TokenKind::Operator(op)) if op == "-" || op == "+" => {
                 let expr = self.parse_expression(30)?;
                 Expr::Unary {
                     op,
@@ -213,15 +271,16 @@ impl Parser {
 
         loop {
             let op = match self.peek() {
-                Some(TokenKind::Operator(op)) => *op,
+                Some(TokenKind::Operator(op)) => op.clone(),
                 _ => break,
             };
 
-            let (l_bp, r_bp) = match op {
-                '=' => (1, 0),
-                '<' | '>' => (5, 6),
-                '+' | '-' => (10, 11),
-                '*' | '/' => (20, 21),
+            let (l_bp, r_bp) = match op.as_str() {
+                "=" => (1, 0),
+                "==" | "!=" => (3, 4),
+                "<" | ">" | "<=" | ">=" => (5, 6),
+                "+" | "-" => (10, 11),
+                "*" | "/" => (20, 21),
                 _ => break,
             };
 
@@ -230,6 +289,7 @@ impl Parser {
             }
 
             self.next();
+
             let right = self.parse_expression(r_bp)?;
 
             left = Expr::Binary {
@@ -247,23 +307,23 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
     match expr {
         Expr::Number(n) => Ok(*n),
 
-        Expr::Ident(name) => {
-            env.get(name)
-                .copied()
-                .ok_or_else(|| format!("undefined variable '{}'", name))
-        }
+        Expr::Ident(name) => env
+            .get(name)
+            .copied()
+            .ok_or_else(|| format!("undefined variable '{}'", name)),
 
         Expr::Unary { op, expr } => {
             let v = eval(expr, env)?;
-            match op {
-                '-' => Ok(-v),
-                '+' => Ok(v),
+
+            match op.as_str() {
+                "-" => Ok(-v),
+                "+" => Ok(v),
                 _ => Err("unknown unary operator".into()),
             }
         }
 
         Expr::Binary { op, left, right } => {
-            if *op == '=' {
+            if op == "=" {
                 if let Expr::Ident(name) = &**left {
                     let value = eval(right, env)?;
                     env.insert(name.clone(), value);
@@ -276,13 +336,20 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
             let l = eval(left, env)?;
             let r = eval(right, env)?;
 
-            match op {
-                '+' => Ok(l + r),
-                '-' => Ok(l - r),
-                '*' => Ok(l * r),
-                '/' => Ok(l / r),
-                '<' => Ok((l < r) as i64),
-                '>' => Ok((l > r) as i64),
+            match op.as_str() {
+                "+" => Ok(l + r),
+                "-" => Ok(l - r),
+                "*" => Ok(l * r),
+                "/" => Ok(l / r),
+
+                "<" => Ok((l < r) as i64),
+                ">" => Ok((l > r) as i64),
+                "<=" => Ok((l <= r) as i64),
+                ">=" => Ok((l >= r) as i64),
+
+                "==" => Ok((l == r) as i64),
+                "!=" => Ok((l != r) as i64),
+
                 _ => Err("unknown operator".into()),
             }
         }
@@ -303,6 +370,7 @@ fn main() {
         match tokenize(line) {
             Ok(tokens) => {
                 let mut parser = Parser::new(tokens);
+
                 match parser.parse_expression(0) {
                     Ok(expr) => match eval(&expr, &mut env) {
                         Ok(value) => println!("{}", value),
@@ -311,12 +379,14 @@ fn main() {
                             break;
                         }
                     },
+
                     Err(e) => {
                         eprintln!("parse error: {}", e);
                         break;
                     }
                 }
             }
+
             Err(e) => {
                 eprintln!("lex error: {}", e);
                 break;
