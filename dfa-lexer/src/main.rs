@@ -1,68 +1,6 @@
 use std::collections::HashMap;
 use std::io::{self, Read};
 
-#[derive(Copy, Clone, PartialEq)]
-enum State {
-    Start,
-    Ident,
-    Number,
-    Operator,
-    LParen,
-    RParen,
-    Error,
-}
-
-enum Class {
-    Letter,
-    Digit,
-    Operator,
-    LParen,
-    RParen,
-    Whitespace,
-    Other,
-}
-
-fn classify(c: char) -> Class {
-    match c {
-        'a'..='z' | 'A'..='Z' | '_' => Class::Letter,
-        '0'..='9' => Class::Digit,
-        '+' | '-' | '*' | '/' | '=' | '<' | '>' | '!' => Class::Operator,
-        '(' => Class::LParen,
-        ')' => Class::RParen,
-        ' ' | '\n' | '\t' | '\r' => Class::Whitespace,
-        _ => Class::Other,
-    }
-}
-
-const STATE_COUNT: usize = 7;
-const CLASS_COUNT: usize = 7;
-
-const TRANSITIONS: [[State; CLASS_COUNT]; STATE_COUNT] = [
-    [State::Ident, State::Number, State::Operator, State::LParen, State::RParen, State::Start, State::Error],
-    [State::Ident, State::Ident, State::Error, State::Error, State::Error, State::Error, State::Error],
-    [State::Error, State::Number, State::Error, State::Error, State::Error, State::Error, State::Error],
-    [State::Error; CLASS_COUNT],
-    [State::Error; CLASS_COUNT],
-    [State::Error; CLASS_COUNT],
-    [State::Error; CLASS_COUNT],
-];
-
-fn state_index(s: State) -> usize {
-    s as usize
-}
-
-fn class_index(c: Class) -> usize {
-    match c {
-        Class::Letter => 0,
-        Class::Digit => 1,
-        Class::Operator => 2,
-        Class::LParen => 3,
-        Class::RParen => 4,
-        Class::Whitespace => 5,
-        Class::Other => 6,
-    }
-}
-
 #[derive(Debug)]
 enum TokenKind {
     Ident(String),
@@ -84,9 +22,7 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
 
     while i < chars.len() {
         match chars[i] {
-            ' ' | '\n' | '\t' | '\r' => {
-                i += 1;
-            }
+            ' ' | '\n' | '\t' | '\r' => i += 1,
 
             'a'..='z' | 'A'..='Z' | '_' => {
                 let start = i;
@@ -95,11 +31,8 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 {
                     i += 1;
                 }
-
                 let text: String = chars[start..i].iter().collect();
-                tokens.push(Token {
-                    kind: TokenKind::Ident(text),
-                });
+                tokens.push(Token { kind: TokenKind::Ident(text) });
             }
 
             '0'..='9' => {
@@ -107,55 +40,57 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 while i < chars.len() && matches!(chars[i], '0'..='9') {
                     i += 1;
                 }
-
                 let text: String = chars[start..i].iter().collect();
                 let value = text.parse::<i64>().map_err(|_| "invalid number")?;
-
-                tokens.push(Token {
-                    kind: TokenKind::Number(value),
-                });
+                tokens.push(Token { kind: TokenKind::Number(value) });
             }
 
             '(' => {
-                tokens.push(Token {
-                    kind: TokenKind::LParen,
-                });
+                tokens.push(Token { kind: TokenKind::LParen });
                 i += 1;
             }
 
             ')' => {
-                tokens.push(Token {
-                    kind: TokenKind::RParen,
-                });
+                tokens.push(Token { kind: TokenKind::RParen });
                 i += 1;
             }
 
             '+' | '-' | '*' | '/' => {
-                tokens.push(Token {
-                    kind: TokenKind::Operator(chars[i].to_string()),
-                });
+                tokens.push(Token { kind: TokenKind::Operator(chars[i].to_string()) });
                 i += 1;
+            }
+
+            '&' => {
+                if i + 1 < chars.len() && chars[i + 1] == '&' {
+                    tokens.push(Token { kind: TokenKind::Operator("&&".into()) });
+                    i += 2;
+                } else {
+                    return Err("unexpected '&'".into());
+                }
+            }
+
+            '|' => {
+                if i + 1 < chars.len() && chars[i + 1] == '|' {
+                    tokens.push(Token { kind: TokenKind::Operator("||".into()) });
+                    i += 2;
+                } else {
+                    return Err("unexpected '|'".into());
+                }
             }
 
             '=' => {
                 if i + 1 < chars.len() && chars[i + 1] == '=' {
-                    tokens.push(Token {
-                        kind: TokenKind::Operator("==".into()),
-                    });
+                    tokens.push(Token { kind: TokenKind::Operator("==".into()) });
                     i += 2;
                 } else {
-                    tokens.push(Token {
-                        kind: TokenKind::Operator("=".into()),
-                    });
+                    tokens.push(Token { kind: TokenKind::Operator("=".into()) });
                     i += 1;
                 }
             }
 
             '!' => {
                 if i + 1 < chars.len() && chars[i + 1] == '=' {
-                    tokens.push(Token {
-                        kind: TokenKind::Operator("!=".into()),
-                    });
+                    tokens.push(Token { kind: TokenKind::Operator("!=".into()) });
                     i += 2;
                 } else {
                     return Err("unexpected '!'".into());
@@ -164,35 +99,25 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
 
             '<' => {
                 if i + 1 < chars.len() && chars[i + 1] == '=' {
-                    tokens.push(Token {
-                        kind: TokenKind::Operator("<=".into()),
-                    });
+                    tokens.push(Token { kind: TokenKind::Operator("<=".into()) });
                     i += 2;
                 } else {
-                    tokens.push(Token {
-                        kind: TokenKind::Operator("<".into()),
-                    });
+                    tokens.push(Token { kind: TokenKind::Operator("<".into()) });
                     i += 1;
                 }
             }
 
             '>' => {
                 if i + 1 < chars.len() && chars[i + 1] == '=' {
-                    tokens.push(Token {
-                        kind: TokenKind::Operator(">=".into()),
-                    });
+                    tokens.push(Token { kind: TokenKind::Operator(">=".into()) });
                     i += 2;
                 } else {
-                    tokens.push(Token {
-                        kind: TokenKind::Operator(">".into()),
-                    });
+                    tokens.push(Token { kind: TokenKind::Operator(">".into()) });
                     i += 1;
                 }
             }
 
-            _ => {
-                return Err(format!("invalid character '{}'", chars[i]));
-            }
+            _ => return Err(format!("invalid character '{}'", chars[i])),
         }
     }
 
@@ -235,11 +160,7 @@ impl Parser {
             return None;
         }
 
-        let token = std::mem::replace(
-            &mut self.tokens[self.pos].kind,
-            TokenKind::LParen,
-        );
-
+        let token = std::mem::replace(&mut self.tokens[self.pos].kind, TokenKind::LParen);
         self.pos += 1;
         Some(token)
     }
@@ -252,10 +173,7 @@ impl Parser {
 
             Some(TokenKind::Operator(op)) if op == "-" || op == "+" => {
                 let expr = self.parse_expression(30)?;
-                Expr::Unary {
-                    op,
-                    expr: Box::new(expr),
-                }
+                Expr::Unary { op, expr: Box::new(expr) }
             }
 
             Some(TokenKind::LParen) => {
@@ -277,10 +195,12 @@ impl Parser {
 
             let (l_bp, r_bp) = match op.as_str() {
                 "=" => (1, 0),
-                "==" | "!=" => (3, 4),
-                "<" | ">" | "<=" | ">=" => (5, 6),
+                "||" => (2, 3),
+                "&&" => (4, 5),
+                "==" | "!=" => (6, 7),
+                "<" | ">" | "<=" | ">=" => (8, 9),
                 "+" | "-" => (10, 11),
-                "*" | "/" => (20, 21),
+                "*" | "/" => (12, 13),
                 _ => break,
             };
 
@@ -289,7 +209,6 @@ impl Parser {
             }
 
             self.next();
-
             let right = self.parse_expression(r_bp)?;
 
             left = Expr::Binary {
@@ -314,7 +233,6 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
 
         Expr::Unary { op, expr } => {
             let v = eval(expr, env)?;
-
             match op.as_str() {
                 "-" => Ok(-v),
                 "+" => Ok(v),
@@ -349,6 +267,9 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
 
                 "==" => Ok((l == r) as i64),
                 "!=" => Ok((l != r) as i64),
+
+                "&&" => Ok(((l != 0) && (r != 0)) as i64),
+                "||" => Ok(((l != 0) || (r != 0)) as i64),
 
                 _ => Err("unknown operator".into()),
             }
