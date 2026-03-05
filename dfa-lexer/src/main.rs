@@ -31,17 +31,21 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 {
                     i += 1;
                 }
+
                 let text: String = chars[start..i].iter().collect();
                 tokens.push(Token { kind: TokenKind::Ident(text) });
             }
 
             '0'..='9' => {
                 let start = i;
+
                 while i < chars.len() && matches!(chars[i], '0'..='9') {
                     i += 1;
                 }
+
                 let text: String = chars[start..i].iter().collect();
                 let value = text.parse::<i64>().map_err(|_| "invalid number")?;
+
                 tokens.push(Token { kind: TokenKind::Number(value) });
             }
 
@@ -58,6 +62,16 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
             '+' | '-' | '*' | '/' => {
                 tokens.push(Token { kind: TokenKind::Operator(chars[i].to_string()) });
                 i += 1;
+            }
+
+            '!' => {
+                if i + 1 < chars.len() && chars[i + 1] == '=' {
+                    tokens.push(Token { kind: TokenKind::Operator("!=".into()) });
+                    i += 2;
+                } else {
+                    tokens.push(Token { kind: TokenKind::Operator("!".into()) });
+                    i += 1;
+                }
             }
 
             '&' => {
@@ -85,15 +99,6 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 } else {
                     tokens.push(Token { kind: TokenKind::Operator("=".into()) });
                     i += 1;
-                }
-            }
-
-            '!' => {
-                if i + 1 < chars.len() && chars[i + 1] == '=' {
-                    tokens.push(Token { kind: TokenKind::Operator("!=".into()) });
-                    i += 2;
-                } else {
-                    return Err("unexpected '!'".into());
                 }
             }
 
@@ -171,13 +176,14 @@ impl Parser {
 
             Some(TokenKind::Ident(s)) => Expr::Ident(s),
 
-            Some(TokenKind::Operator(op)) if op == "-" || op == "+" => {
+            Some(TokenKind::Operator(op)) if op == "-" || op == "+" || op == "!" => {
                 let expr = self.parse_expression(30)?;
                 Expr::Unary { op, expr: Box::new(expr) }
             }
 
             Some(TokenKind::LParen) => {
                 let expr = self.parse_expression(0)?;
+
                 match self.next() {
                     Some(TokenKind::RParen) => expr,
                     _ => return Err("expected ')'".into()),
@@ -209,6 +215,7 @@ impl Parser {
             }
 
             self.next();
+
             let right = self.parse_expression(r_bp)?;
 
             left = Expr::Binary {
@@ -226,16 +233,19 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
     match expr {
         Expr::Number(n) => Ok(*n),
 
-        Expr::Ident(name) => env
-            .get(name)
-            .copied()
-            .ok_or_else(|| format!("undefined variable '{}'", name)),
+        Expr::Ident(name) => {
+            env.get(name)
+                .copied()
+                .ok_or_else(|| format!("undefined variable '{}'", name))
+        }
 
         Expr::Unary { op, expr } => {
             let v = eval(expr, env)?;
+
             match op.as_str() {
                 "-" => Ok(-v),
                 "+" => Ok(v),
+                "!" => Ok((v == 0) as i64),
                 _ => Err("unknown unary operator".into()),
             }
         }
