@@ -26,6 +26,7 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
 
             'a'..='z' | 'A'..='Z' | '_' => {
                 let start = i;
+
                 while i < chars.len()
                     && matches!(chars[i], 'a'..='z' | 'A'..='Z' | '_' | '0'..='9')
                 {
@@ -33,7 +34,10 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 }
 
                 let text: String = chars[start..i].iter().collect();
-                tokens.push(Token { kind: TokenKind::Ident(text) });
+
+                tokens.push(Token {
+                    kind: TokenKind::Ident(text),
+                });
             }
 
             '0'..='9' => {
@@ -46,7 +50,9 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 let text: String = chars[start..i].iter().collect();
                 let value = text.parse::<i64>().map_err(|_| "invalid number")?;
 
-                tokens.push(Token { kind: TokenKind::Number(value) });
+                tokens.push(Token {
+                    kind: TokenKind::Number(value),
+                });
             }
 
             '(' => {
@@ -60,23 +66,31 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
             }
 
             '+' | '-' | '*' | '/' => {
-                tokens.push(Token { kind: TokenKind::Operator(chars[i].to_string()) });
+                tokens.push(Token {
+                    kind: TokenKind::Operator(chars[i].to_string()),
+                });
                 i += 1;
             }
 
             '!' => {
                 if i + 1 < chars.len() && chars[i + 1] == '=' {
-                    tokens.push(Token { kind: TokenKind::Operator("!=".into()) });
+                    tokens.push(Token {
+                        kind: TokenKind::Operator("!=".into()),
+                    });
                     i += 2;
                 } else {
-                    tokens.push(Token { kind: TokenKind::Operator("!".into()) });
+                    tokens.push(Token {
+                        kind: TokenKind::Operator("!".into()),
+                    });
                     i += 1;
                 }
             }
 
             '&' => {
                 if i + 1 < chars.len() && chars[i + 1] == '&' {
-                    tokens.push(Token { kind: TokenKind::Operator("&&".into()) });
+                    tokens.push(Token {
+                        kind: TokenKind::Operator("&&".into()),
+                    });
                     i += 2;
                 } else {
                     return Err("unexpected '&'".into());
@@ -85,7 +99,9 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
 
             '|' => {
                 if i + 1 < chars.len() && chars[i + 1] == '|' {
-                    tokens.push(Token { kind: TokenKind::Operator("||".into()) });
+                    tokens.push(Token {
+                        kind: TokenKind::Operator("||".into()),
+                    });
                     i += 2;
                 } else {
                     return Err("unexpected '|'".into());
@@ -94,30 +110,42 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
 
             '=' => {
                 if i + 1 < chars.len() && chars[i + 1] == '=' {
-                    tokens.push(Token { kind: TokenKind::Operator("==".into()) });
+                    tokens.push(Token {
+                        kind: TokenKind::Operator("==".into()),
+                    });
                     i += 2;
                 } else {
-                    tokens.push(Token { kind: TokenKind::Operator("=".into()) });
+                    tokens.push(Token {
+                        kind: TokenKind::Operator("=".into()),
+                    });
                     i += 1;
                 }
             }
 
             '<' => {
                 if i + 1 < chars.len() && chars[i + 1] == '=' {
-                    tokens.push(Token { kind: TokenKind::Operator("<=".into()) });
+                    tokens.push(Token {
+                        kind: TokenKind::Operator("<=".into()),
+                    });
                     i += 2;
                 } else {
-                    tokens.push(Token { kind: TokenKind::Operator("<".into()) });
+                    tokens.push(Token {
+                        kind: TokenKind::Operator("<".into()),
+                    });
                     i += 1;
                 }
             }
 
             '>' => {
                 if i + 1 < chars.len() && chars[i + 1] == '=' {
-                    tokens.push(Token { kind: TokenKind::Operator(">=".into()) });
+                    tokens.push(Token {
+                        kind: TokenKind::Operator(">=".into()),
+                    });
                     i += 2;
                 } else {
-                    tokens.push(Token { kind: TokenKind::Operator(">".into()) });
+                    tokens.push(Token {
+                        kind: TokenKind::Operator(">".into()),
+                    });
                     i += 1;
                 }
             }
@@ -144,6 +172,11 @@ enum Expr {
         left: Box<Expr>,
         right: Box<Expr>,
     },
+
+    Call {
+        name: String,
+        arg: Box<Expr>,
+    },
 }
 
 struct Parser {
@@ -160,6 +193,10 @@ impl Parser {
         self.tokens.get(self.pos).map(|t| &t.kind)
     }
 
+    fn peek_next(&self) -> Option<&TokenKind> {
+        self.tokens.get(self.pos + 1).map(|t| &t.kind)
+    }
+
     fn next(&mut self) -> Option<TokenKind> {
         if self.pos >= self.tokens.len() {
             return None;
@@ -174,11 +211,30 @@ impl Parser {
         let mut left = match self.next() {
             Some(TokenKind::Number(n)) => Expr::Number(n),
 
-            Some(TokenKind::Ident(s)) => Expr::Ident(s),
+            Some(TokenKind::Ident(name)) => {
+                if matches!(self.peek(), Some(TokenKind::LParen)) {
+                    self.next();
+
+                    let arg = self.parse_expression(0)?;
+
+                    match self.next() {
+                        Some(TokenKind::RParen) => Expr::Call {
+                            name,
+                            arg: Box::new(arg),
+                        },
+                        _ => return Err("expected ')'".into()),
+                    }
+                } else {
+                    Expr::Ident(name)
+                }
+            }
 
             Some(TokenKind::Operator(op)) if op == "-" || op == "+" || op == "!" => {
                 let expr = self.parse_expression(30)?;
-                Expr::Unary { op, expr: Box::new(expr) }
+                Expr::Unary {
+                    op,
+                    expr: Box::new(expr),
+                }
             }
 
             Some(TokenKind::LParen) => {
@@ -282,6 +338,23 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
                 "||" => Ok(((l != 0) || (r != 0)) as i64),
 
                 _ => Err("unknown operator".into()),
+            }
+        }
+
+        Expr::Call { name, arg } => {
+            let v = eval(arg, env)?;
+
+            match name.as_str() {
+                "print" => {
+                    println!("{}", v);
+                    Ok(v)
+                }
+
+                "exit" => {
+                    std::process::exit(v as i32);
+                }
+
+                _ => Err(format!("unknown function '{}'", name)),
             }
         }
     }
