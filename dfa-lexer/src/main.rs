@@ -8,6 +8,7 @@ enum TokenKind {
     Operator(String),
     LParen,
     RParen,
+    Comma,
 }
 
 #[derive(Debug)]
@@ -23,6 +24,11 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
     while i < chars.len() {
         match chars[i] {
             ' ' | '\n' | '\t' | '\r' => i += 1,
+
+            ',' => {
+                tokens.push(Token { kind: TokenKind::Comma });
+                i += 1;
+            }
 
             'a'..='z' | 'A'..='Z' | '_' => {
                 let start = i;
@@ -175,7 +181,7 @@ enum Expr {
 
     Call {
         name: String,
-        arg: Box<Expr>,
+        args: Vec<Expr>,
     },
 }
 
@@ -193,18 +199,40 @@ impl Parser {
         self.tokens.get(self.pos).map(|t| &t.kind)
     }
 
-    fn peek_next(&self) -> Option<&TokenKind> {
-        self.tokens.get(self.pos + 1).map(|t| &t.kind)
-    }
-
     fn next(&mut self) -> Option<TokenKind> {
         if self.pos >= self.tokens.len() {
             return None;
         }
 
-        let token = std::mem::replace(&mut self.tokens[self.pos].kind, TokenKind::LParen);
+        let token = std::mem::replace(&mut self.tokens[self.pos].kind, TokenKind::Comma);
         self.pos += 1;
         Some(token)
+    }
+
+    fn parse_call(&mut self, name: String) -> Result<Expr, String> {
+        let mut args = Vec::new();
+
+        loop {
+            if matches!(self.peek(), Some(TokenKind::RParen)) {
+                self.next();
+                break;
+            }
+
+            args.push(self.parse_expression(0)?);
+
+            match self.peek() {
+                Some(TokenKind::Comma) => {
+                    self.next();
+                }
+                Some(TokenKind::RParen) => {
+                    self.next();
+                    break;
+                }
+                _ => return Err("expected ',' or ')'".into()),
+            }
+        }
+
+        Ok(Expr::Call { name, args })
     }
 
     fn parse_expression(&mut self, min_bp: u8) -> Result<Expr, String> {
@@ -214,16 +242,7 @@ impl Parser {
             Some(TokenKind::Ident(name)) => {
                 if matches!(self.peek(), Some(TokenKind::LParen)) {
                     self.next();
-
-                    let arg = self.parse_expression(0)?;
-
-                    match self.next() {
-                        Some(TokenKind::RParen) => Expr::Call {
-                            name,
-                            arg: Box::new(arg),
-                        },
-                        _ => return Err("expected ')'".into()),
-                    }
+                    self.parse_call(name)?
                 } else {
                     Expr::Ident(name)
                 }
@@ -239,7 +258,6 @@ impl Parser {
 
             Some(TokenKind::LParen) => {
                 let expr = self.parse_expression(0)?;
-
                 match self.next() {
                     Some(TokenKind::RParen) => expr,
                     _ => return Err("expected ')'".into()),
@@ -271,7 +289,6 @@ impl Parser {
             }
 
             self.next();
-
             let right = self.parse_expression(r_bp)?;
 
             left = Expr::Binary {
@@ -289,11 +306,10 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
     match expr {
         Expr::Number(n) => Ok(*n),
 
-        Expr::Ident(name) => {
-            env.get(name)
-                .copied()
-                .ok_or_else(|| format!("undefined variable '{}'", name))
-        }
+        Expr::Ident(name) => env
+            .get(name)
+            .copied()
+            .ok_or_else(|| format!("undefined variable '{}'", name)),
 
         Expr::Unary { op, expr } => {
             let v = eval(expr, env)?;
@@ -341,17 +357,26 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
             }
         }
 
-        Expr::Call { name, arg } => {
-            let v = eval(arg, env)?;
+        Expr::Call { name, args } => {
+            let mut values = Vec::new();
+            for arg in args {
+                values.push(eval(arg, env)?);
+            }
 
             match name.as_str() {
                 "print" => {
-                    println!("{}", v);
-                    Ok(v)
+                    for v in &values {
+                        println!("{}", v);
+                    }
+                    Ok(*values.last().unwrap_or(&0))
                 }
 
+                "max" => Ok(*values.iter().max().unwrap()),
+
+                "min" => Ok(*values.iter().min().unwrap()),
+
                 "exit" => {
-                    std::process::exit(v as i32);
+                    std::process::exit(values.get(0).copied().unwrap_or(0) as i32);
                 }
 
                 _ => Err(format!("unknown function '{}'", name)),
