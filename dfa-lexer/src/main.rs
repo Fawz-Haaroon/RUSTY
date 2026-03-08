@@ -258,6 +258,7 @@ impl Parser {
 
             Some(TokenKind::LParen) => {
                 let expr = self.parse_expression(0)?;
+
                 match self.next() {
                     Some(TokenKind::RParen) => expr,
                     _ => return Err("expected ')'".into()),
@@ -289,6 +290,7 @@ impl Parser {
             }
 
             self.next();
+
             let right = self.parse_expression(r_bp)?;
 
             left = Expr::Binary {
@@ -358,28 +360,43 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
         }
 
         Expr::Call { name, args } => {
-            let mut values = Vec::new();
-            for arg in args {
-                values.push(eval(arg, env)?);
-            }
+            if name == "if" {
+                if args.len() != 3 {
+                    return Err("if(condition, a, b) requires 3 arguments".into());
+                }
 
-            match name.as_str() {
-                "print" => {
-                    for v in &values {
-                        println!("{}", v);
+                let cond = eval(&args[0], env)?;
+
+                if cond != 0 {
+                    eval(&args[1], env)
+                } else {
+                    eval(&args[2], env)
+                }
+            } else {
+                let mut values = Vec::new();
+
+                for arg in args {
+                    values.push(eval(arg, env)?);
+                }
+
+                match name.as_str() {
+                    "print" => {
+                        for v in &values {
+                            println!("{}", v);
+                        }
+                        Ok(*values.last().unwrap_or(&0))
                     }
-                    Ok(*values.last().unwrap_or(&0))
+
+                    "max" => Ok(*values.iter().max().unwrap()),
+
+                    "min" => Ok(*values.iter().min().unwrap()),
+
+                    "exit" => {
+                        std::process::exit(values.get(0).copied().unwrap_or(0) as i32);
+                    }
+
+                    _ => Err(format!("unknown function '{}'", name)),
                 }
-
-                "max" => Ok(*values.iter().max().unwrap()),
-
-                "min" => Ok(*values.iter().min().unwrap()),
-
-                "exit" => {
-                    std::process::exit(values.get(0).copied().unwrap_or(0) as i32);
-                }
-
-                _ => Err(format!("unknown function '{}'", name)),
             }
         }
     }
