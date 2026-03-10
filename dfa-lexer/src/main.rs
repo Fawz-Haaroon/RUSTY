@@ -1,3 +1,4 @@
+cat > src/main.rs << 'EOF'
 use std::collections::HashMap;
 use std::io::{self, Read};
 
@@ -290,7 +291,6 @@ impl Parser {
             }
 
             self.next();
-
             let right = self.parse_expression(r_bp)?;
 
             left = Expr::Binary {
@@ -361,32 +361,26 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
 
         Expr::Call { name, args } => {
             if name == "if" {
-                if args.len() != 3 {
-                    return Err("if(condition,a,b) requires 3 args".into());
-                }
-
                 let cond = eval(&args[0], env)?;
-
                 if cond != 0 {
                     eval(&args[1], env)
                 } else {
                     eval(&args[2], env)
                 }
             } else if name == "while" {
-                if args.len() != 2 {
-                    return Err("while(cond,expr) requires 2 args".into());
-                }
-
                 let mut last = 0;
-
                 while eval(&args[0], env)? != 0 {
                     last = eval(&args[1], env)?;
                 }
-
+                Ok(last)
+            } else if name == "do" {
+                let mut last = 0;
+                for arg in args {
+                    last = eval(arg, env)?;
+                }
                 Ok(last)
             } else {
                 let mut values = Vec::new();
-
                 for arg in args {
                     values.push(eval(arg, env)?);
                 }
@@ -451,3 +445,4 @@ fn main() {
         }
     }
 }
+EOF
