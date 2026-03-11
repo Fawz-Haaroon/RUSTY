@@ -1,4 +1,3 @@
-cat > src/main.rs << 'EOF'
 use std::collections::HashMap;
 use std::io::{self, Read};
 
@@ -335,6 +334,24 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
                 }
             }
 
+            if op == "&&" {
+                let l = eval(left, env)?;
+                if l == 0 {
+                    return Ok(0);
+                }
+                let r = eval(right, env)?;
+                return Ok((r != 0) as i64);
+            }
+
+            if op == "||" {
+                let l = eval(left, env)?;
+                if l != 0 {
+                    return Ok(1);
+                }
+                let r = eval(right, env)?;
+                return Ok((r != 0) as i64);
+            }
+
             let l = eval(left, env)?;
             let r = eval(right, env)?;
 
@@ -351,9 +368,6 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
 
                 "==" => Ok((l == r) as i64),
                 "!=" => Ok((l != r) as i64),
-
-                "&&" => Ok(((l != 0) && (r != 0)) as i64),
-                "||" => Ok(((l != 0) || (r != 0)) as i64),
 
                 _ => Err("unknown operator".into()),
             }
@@ -445,4 +459,3 @@ fn main() {
         }
     }
 }
-EOF
