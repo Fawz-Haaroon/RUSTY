@@ -359,7 +359,13 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
                 "+" => Ok(l + r),
                 "-" => Ok(l - r),
                 "*" => Ok(l * r),
-                "/" => Ok(l / r),
+
+                "/" => {
+                    if r == 0 {
+                        return Err("division by zero".into());
+                    }
+                    Ok(l / r)
+                }
 
                 "<" => Ok((l < r) as i64),
                 ">" => Ok((l > r) as i64),
@@ -374,20 +380,7 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
         }
 
         Expr::Call { name, args } => {
-            if name == "if" {
-                let cond = eval(&args[0], env)?;
-                if cond != 0 {
-                    eval(&args[1], env)
-                } else {
-                    eval(&args[2], env)
-                }
-            } else if name == "while" {
-                let mut last = 0;
-                while eval(&args[0], env)? != 0 {
-                    last = eval(&args[1], env)?;
-                }
-                Ok(last)
-            } else if name == "do" {
+            if name == "do" {
                 let mut last = 0;
                 for arg in args {
                     last = eval(arg, env)?;
@@ -409,6 +402,10 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
 
                     "max" => Ok(*values.iter().max().unwrap()),
                     "min" => Ok(*values.iter().min().unwrap()),
+
+                    "abs" => Ok(values[0].abs()),
+
+                    "pow" => Ok(values[0].pow(values[1] as u32)),
 
                     "exit" => {
                         std::process::exit(values.get(0).copied().unwrap_or(0) as i32);
