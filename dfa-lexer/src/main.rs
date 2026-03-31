@@ -359,60 +359,52 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
                 "+" => Ok(l + r),
                 "-" => Ok(l - r),
                 "*" => Ok(l * r),
-
                 "/" => {
                     if r == 0 {
                         return Err("division by zero".into());
                     }
                     Ok(l / r)
                 }
-
                 "<" => Ok((l < r) as i64),
                 ">" => Ok((l > r) as i64),
                 "<=" => Ok((l <= r) as i64),
                 ">=" => Ok((l >= r) as i64),
-
                 "==" => Ok((l == r) as i64),
                 "!=" => Ok((l != r) as i64),
-
                 _ => Err("unknown operator".into()),
             }
         }
 
         Expr::Call { name, args } => {
-            if name == "do" {
-                let mut last = 0;
-                for arg in args {
-                    last = eval(arg, env)?;
-                }
-                Ok(last)
-            } else {
-                let mut values = Vec::new();
-                for arg in args {
-                    values.push(eval(arg, env)?);
-                }
+            if name == "clear" {
+                env.clear();
+                return Ok(0);
+            }
 
-                match name.as_str() {
-                    "print" => {
-                        for v in &values {
-                            println!("{}", v);
-                        }
-                        Ok(*values.last().unwrap_or(&0))
+            let mut values = Vec::new();
+            for arg in args {
+                values.push(eval(arg, env)?);
+            }
+
+            match name.as_str() {
+                "print" => {
+                    for v in &values {
+                        println!("{}", v);
                     }
-
-                    "max" => Ok(*values.iter().max().unwrap()),
-                    "min" => Ok(*values.iter().min().unwrap()),
-
-                    "abs" => Ok(values[0].abs()),
-
-                    "pow" => Ok(values[0].pow(values[1] as u32)),
-
-                    "exit" => {
-                        std::process::exit(values.get(0).copied().unwrap_or(0) as i32);
-                    }
-
-                    _ => Err(format!("unknown function '{}'", name)),
+                    Ok(*values.last().unwrap_or(&0))
                 }
+
+                "abs" => Ok(values[0].abs()),
+                "pow" => Ok(values[0].pow(values[1] as u32)),
+
+                "max" => Ok(*values.iter().max().unwrap()),
+                "min" => Ok(*values.iter().min().unwrap()),
+
+                "exit" => {
+                    std::process::exit(values.get(0).copied().unwrap_or(0) as i32);
+                }
+
+                _ => Err(format!("unknown function '{}'", name)),
             }
         }
     }
