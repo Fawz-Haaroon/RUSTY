@@ -314,7 +314,6 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
 
         Expr::Unary { op, expr } => {
             let v = eval(expr, env)?;
-
             match op.as_str() {
                 "-" => Ok(-v),
                 "+" => Ok(v),
@@ -330,7 +329,7 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
                     env.insert(name.clone(), value);
                     return Ok(value);
                 } else {
-                    return Err("left side of assignment must be identifier".into());
+                    return Err("left side must be identifier".into());
                 }
             }
 
@@ -339,8 +338,7 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
                 if l == 0 {
                     return Ok(0);
                 }
-                let r = eval(right, env)?;
-                return Ok((r != 0) as i64);
+                return Ok((eval(right, env)? != 0) as i64);
             }
 
             if op == "||" {
@@ -348,8 +346,7 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
                 if l != 0 {
                     return Ok(1);
                 }
-                let r = eval(right, env)?;
-                return Ok((r != 0) as i64);
+                return Ok((eval(right, env)? != 0) as i64);
             }
 
             let l = eval(left, env)?;
@@ -381,6 +378,13 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
                 return Ok(0);
             }
 
+            if name == "env" {
+                for (k, v) in env.iter() {
+                    println!("{} = {}", k, v);
+                }
+                return Ok(env.len() as i64);
+            }
+
             let mut values = Vec::new();
             for arg in args {
                 values.push(eval(arg, env)?);
@@ -393,17 +397,11 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
                     }
                     Ok(*values.last().unwrap_or(&0))
                 }
-
                 "abs" => Ok(values[0].abs()),
                 "pow" => Ok(values[0].pow(values[1] as u32)),
-
                 "max" => Ok(*values.iter().max().unwrap()),
                 "min" => Ok(*values.iter().min().unwrap()),
-
-                "exit" => {
-                    std::process::exit(values.get(0).copied().unwrap_or(0) as i32);
-                }
-
+                "exit" => std::process::exit(values.get(0).copied().unwrap_or(0) as i32),
                 _ => Err(format!("unknown function '{}'", name)),
             }
         }
@@ -424,23 +422,20 @@ fn main() {
         match tokenize(line) {
             Ok(tokens) => {
                 let mut parser = Parser::new(tokens);
-
                 match parser.parse_expression(0) {
                     Ok(expr) => match eval(&expr, &mut env) {
-                        Ok(value) => println!("{}", value),
+                        Ok(v) => println!("{}", v),
                         Err(e) => {
                             eprintln!("runtime error: {}", e);
                             break;
                         }
                     },
-
                     Err(e) => {
                         eprintln!("parse error: {}", e);
                         break;
                     }
                 }
             }
-
             Err(e) => {
                 eprintln!("lex error: {}", e);
                 break;
