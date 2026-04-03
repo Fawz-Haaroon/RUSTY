@@ -32,7 +32,6 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
 
             'a'..='z' | 'A'..='Z' | '_' => {
                 let start = i;
-
                 while i < chars.len()
                     && matches!(chars[i], 'a'..='z' | 'A'..='Z' | '_' | '0'..='9')
                 {
@@ -48,7 +47,6 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
 
             '0'..='9' => {
                 let start = i;
-
                 while i < chars.len() && matches!(chars[i], '0'..='9') {
                     i += 1;
                 }
@@ -185,6 +183,22 @@ enum Expr {
     },
 }
 
+fn fold_binary(op: &str, l: i64, r: i64) -> Option<i64> {
+    match op {
+        "+" => Some(l + r),
+        "-" => Some(l - r),
+        "*" => Some(l * r),
+        "/" => if r != 0 { Some(l / r) } else { None },
+        "==" => Some((l == r) as i64),
+        "!=" => Some((l != r) as i64),
+        "<" => Some((l < r) as i64),
+        ">" => Some((l > r) as i64),
+        "<=" => Some((l <= r) as i64),
+        ">=" => Some((l >= r) as i64),
+        _ => None,
+    }
+}
+
 struct Parser {
     tokens: Vec<Token>,
     pos: usize,
@@ -221,13 +235,8 @@ impl Parser {
             args.push(self.parse_expression(0)?);
 
             match self.peek() {
-                Some(TokenKind::Comma) => {
-                    self.next();
-                }
-                Some(TokenKind::RParen) => {
-                    self.next();
-                    break;
-                }
+                Some(TokenKind::Comma) => { self.next(); }
+                Some(TokenKind::RParen) => { self.next(); break; }
                 _ => return Err("expected ',' or ')'".into()),
             }
         }
@@ -250,15 +259,11 @@ impl Parser {
 
             Some(TokenKind::Operator(op)) if op == "-" || op == "+" || op == "!" => {
                 let expr = self.parse_expression(30)?;
-                Expr::Unary {
-                    op,
-                    expr: Box::new(expr),
-                }
+                Expr::Unary { op, expr: Box::new(expr) }
             }
 
             Some(TokenKind::LParen) => {
                 let expr = self.parse_expression(0)?;
-
                 match self.next() {
                     Some(TokenKind::RParen) => expr,
                     _ => return Err("expected ')'".into()),
@@ -292,6 +297,14 @@ impl Parser {
             self.next();
             let right = self.parse_expression(r_bp)?;
 
+            // constant folding
+            if let (Expr::Number(lv), Expr::Number(rv)) = (&left, &right) {
+                if let Some(v) = fold_binary(&op, *lv, *rv) {
+                    left = Expr::Number(v);
+                    continue;
+                }
+            }
+
             left = Expr::Binary {
                 op,
                 left: Box::new(left),
@@ -307,10 +320,8 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
     match expr {
         Expr::Number(n) => Ok(*n),
 
-        Expr::Ident(name) => env
-            .get(name)
-            .copied()
-            .ok_or_else(|| format!("undefined variable '{}'", name)),
+        Expr::Ident(name) => env.get(name).copied()
+            .ok_or_else(|| format!("undefined '{}'", name)),
 
         Expr::Unary { op, expr } => {
             let v = eval(expr, env)?;
@@ -318,34 +329,29 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
                 "-" => Ok(-v),
                 "+" => Ok(v),
                 "!" => Ok((v == 0) as i64),
-                _ => Err("unknown unary operator".into()),
+                _ => Err("bad unary".into()),
             }
         }
 
         Expr::Binary { op, left, right } => {
             if op == "=" {
                 if let Expr::Ident(name) = &**left {
-                    let value = eval(right, env)?;
-                    env.insert(name.clone(), value);
-                    return Ok(value);
-                } else {
-                    return Err("left side must be identifier".into());
+                    let v = eval(right, env)?;
+                    env.insert(name.clone(), v);
+                    return Ok(v);
                 }
+                return Err("bad assignment".into());
             }
 
             if op == "&&" {
                 let l = eval(left, env)?;
-                if l == 0 {
-                    return Ok(0);
-                }
+                if l == 0 { return Ok(0); }
                 return Ok((eval(right, env)? != 0) as i64);
             }
 
             if op == "||" {
                 let l = eval(left, env)?;
-                if l != 0 {
-                    return Ok(1);
-                }
+                if l != 0 { return Ok(1); }
                 return Ok((eval(right, env)? != 0) as i64);
             }
 
@@ -357,18 +363,10 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
                 "-" => Ok(l - r),
                 "*" => Ok(l * r),
                 "/" => {
-                    if r == 0 {
-                        return Err("division by zero".into());
-                    }
+                    if r == 0 { return Err("div by zero".into()); }
                     Ok(l / r)
                 }
-                "<" => Ok((l < r) as i64),
-                ">" => Ok((l > r) as i64),
-                "<=" => Ok((l <= r) as i64),
-                ">=" => Ok((l >= r) as i64),
-                "==" => Ok((l == r) as i64),
-                "!=" => Ok((l != r) as i64),
-                _ => Err("unknown operator".into()),
+                _ => Err("bad op".into()),
             }
         }
 
@@ -379,30 +377,25 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
             }
 
             if name == "env" {
-                for (k, v) in env.iter() {
+                for (k,v) in env.iter() {
                     println!("{} = {}", k, v);
                 }
                 return Ok(env.len() as i64);
             }
 
-            let mut values = Vec::new();
-            for arg in args {
-                values.push(eval(arg, env)?);
+            let mut vals = Vec::new();
+            for a in args {
+                vals.push(eval(a, env)?);
             }
 
             match name.as_str() {
                 "print" => {
-                    for v in &values {
-                        println!("{}", v);
-                    }
-                    Ok(*values.last().unwrap_or(&0))
+                    for v in &vals { println!("{}", v); }
+                    Ok(*vals.last().unwrap_or(&0))
                 }
-                "abs" => Ok(values[0].abs()),
-                "pow" => Ok(values[0].pow(values[1] as u32)),
-                "max" => Ok(*values.iter().max().unwrap()),
-                "min" => Ok(*values.iter().min().unwrap()),
-                "exit" => std::process::exit(values.get(0).copied().unwrap_or(0) as i32),
-                _ => Err(format!("unknown function '{}'", name)),
+                "abs" => Ok(vals[0].abs()),
+                "pow" => Ok(vals[0].pow(vals[1] as u32)),
+                _ => Err("unknown fn".into()),
             }
         }
     }
@@ -412,34 +405,26 @@ fn main() {
     let mut input = String::new();
     io::stdin().read_to_string(&mut input).unwrap();
 
-    let mut env: HashMap<String, i64> = HashMap::new();
+    let mut env = HashMap::new();
 
     for line in input.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
+        if line.trim().is_empty() { continue; }
 
-        match tokenize(line) {
-            Ok(tokens) => {
-                let mut parser = Parser::new(tokens);
-                match parser.parse_expression(0) {
-                    Ok(expr) => match eval(&expr, &mut env) {
-                        Ok(v) => println!("{}", v),
-                        Err(e) => {
-                            eprintln!("runtime error: {}", e);
-                            break;
-                        }
-                    },
-                    Err(e) => {
-                        eprintln!("parse error: {}", e);
-                        break;
-                    }
-                }
-            }
-            Err(e) => {
-                eprintln!("lex error: {}", e);
-                break;
-            }
+        let tokens = match tokenize(line) {
+            Ok(t) => t,
+            Err(e) => { eprintln!("{}", e); break; }
+        };
+
+        let mut parser = Parser::new(tokens);
+
+        let expr = match parser.parse_expression(0) {
+            Ok(e) => e,
+            Err(e) => { eprintln!("{}", e); break; }
+        };
+
+        match eval(&expr, &mut env) {
+            Ok(v) => println!("{}", v),
+            Err(e) => { eprintln!("{}", e); break; }
         }
     }
 }
