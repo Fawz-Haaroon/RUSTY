@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 
 #[derive(Debug)]
 enum TokenKind {
@@ -37,12 +37,8 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 {
                     i += 1;
                 }
-
                 let text: String = chars[start..i].iter().collect();
-
-                tokens.push(Token {
-                    kind: TokenKind::Ident(text),
-                });
+                tokens.push(Token { kind: TokenKind::Ident(text) });
             }
 
             '0'..='9' => {
@@ -50,106 +46,69 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 while i < chars.len() && matches!(chars[i], '0'..='9') {
                     i += 1;
                 }
-
                 let text: String = chars[start..i].iter().collect();
                 let value = text.parse::<i64>().map_err(|_| "invalid number")?;
-
-                tokens.push(Token {
-                    kind: TokenKind::Number(value),
-                });
+                tokens.push(Token { kind: TokenKind::Number(value) });
             }
 
-            '(' => {
-                tokens.push(Token { kind: TokenKind::LParen });
-                i += 1;
-            }
-
-            ')' => {
-                tokens.push(Token { kind: TokenKind::RParen });
-                i += 1;
-            }
+            '(' => { tokens.push(Token { kind: TokenKind::LParen }); i += 1; }
+            ')' => { tokens.push(Token { kind: TokenKind::RParen }); i += 1; }
 
             '+' | '-' | '*' | '/' => {
-                tokens.push(Token {
-                    kind: TokenKind::Operator(chars[i].to_string()),
-                });
+                tokens.push(Token { kind: TokenKind::Operator(chars[i].to_string()) });
                 i += 1;
             }
 
             '!' => {
                 if i + 1 < chars.len() && chars[i + 1] == '=' {
-                    tokens.push(Token {
-                        kind: TokenKind::Operator("!=".into()),
-                    });
+                    tokens.push(Token { kind: TokenKind::Operator("!=".into()) });
                     i += 2;
                 } else {
-                    tokens.push(Token {
-                        kind: TokenKind::Operator("!".into()),
-                    });
+                    tokens.push(Token { kind: TokenKind::Operator("!".into()) });
                     i += 1;
                 }
             }
 
             '&' => {
                 if i + 1 < chars.len() && chars[i + 1] == '&' {
-                    tokens.push(Token {
-                        kind: TokenKind::Operator("&&".into()),
-                    });
+                    tokens.push(Token { kind: TokenKind::Operator("&&".into()) });
                     i += 2;
-                } else {
-                    return Err("unexpected '&'".into());
-                }
+                } else { return Err("unexpected '&'".into()); }
             }
 
             '|' => {
                 if i + 1 < chars.len() && chars[i + 1] == '|' {
-                    tokens.push(Token {
-                        kind: TokenKind::Operator("||".into()),
-                    });
+                    tokens.push(Token { kind: TokenKind::Operator("||".into()) });
                     i += 2;
-                } else {
-                    return Err("unexpected '|'".into());
-                }
+                } else { return Err("unexpected '|'".into()); }
             }
 
             '=' => {
                 if i + 1 < chars.len() && chars[i + 1] == '=' {
-                    tokens.push(Token {
-                        kind: TokenKind::Operator("==".into()),
-                    });
+                    tokens.push(Token { kind: TokenKind::Operator("==".into()) });
                     i += 2;
                 } else {
-                    tokens.push(Token {
-                        kind: TokenKind::Operator("=".into()),
-                    });
+                    tokens.push(Token { kind: TokenKind::Operator("=".into()) });
                     i += 1;
                 }
             }
 
             '<' => {
                 if i + 1 < chars.len() && chars[i + 1] == '=' {
-                    tokens.push(Token {
-                        kind: TokenKind::Operator("<=".into()),
-                    });
+                    tokens.push(Token { kind: TokenKind::Operator("<=".into()) });
                     i += 2;
                 } else {
-                    tokens.push(Token {
-                        kind: TokenKind::Operator("<".into()),
-                    });
+                    tokens.push(Token { kind: TokenKind::Operator("<".into()) });
                     i += 1;
                 }
             }
 
             '>' => {
                 if i + 1 < chars.len() && chars[i + 1] == '=' {
-                    tokens.push(Token {
-                        kind: TokenKind::Operator(">=".into()),
-                    });
+                    tokens.push(Token { kind: TokenKind::Operator(">=".into()) });
                     i += 2;
                 } else {
-                    tokens.push(Token {
-                        kind: TokenKind::Operator(">".into()),
-                    });
+                    tokens.push(Token { kind: TokenKind::Operator(">".into()) });
                     i += 1;
                 }
             }
@@ -166,10 +125,7 @@ enum Expr {
     Number(i64),
     Ident(String),
 
-    Unary {
-        op: String,
-        expr: Box<Expr>,
-    },
+    Unary { op: String, expr: Box<Expr> },
 
     Binary {
         op: String,
@@ -189,12 +145,6 @@ fn fold_binary(op: &str, l: i64, r: i64) -> Option<i64> {
         "-" => Some(l - r),
         "*" => Some(l * r),
         "/" => if r != 0 { Some(l / r) } else { None },
-        "==" => Some((l == r) as i64),
-        "!=" => Some((l != r) as i64),
-        "<" => Some((l < r) as i64),
-        ">" => Some((l > r) as i64),
-        "<=" => Some((l <= r) as i64),
-        ">=" => Some((l >= r) as i64),
         _ => None,
     }
 }
@@ -214,10 +164,7 @@ impl Parser {
     }
 
     fn next(&mut self) -> Option<TokenKind> {
-        if self.pos >= self.tokens.len() {
-            return None;
-        }
-
+        if self.pos >= self.tokens.len() { return None; }
         let token = std::mem::replace(&mut self.tokens[self.pos].kind, TokenKind::Comma);
         self.pos += 1;
         Some(token)
@@ -237,7 +184,7 @@ impl Parser {
             match self.peek() {
                 Some(TokenKind::Comma) => { self.next(); }
                 Some(TokenKind::RParen) => { self.next(); break; }
-                _ => return Err("expected ',' or ')'".into()),
+                _ => return Err("bad call".into()),
             }
         }
 
@@ -270,7 +217,7 @@ impl Parser {
                 }
             }
 
-            _ => return Err("unexpected token".into()),
+            _ => return Err("unexpected".into()),
         };
 
         loop {
@@ -283,21 +230,16 @@ impl Parser {
                 "=" => (1, 0),
                 "||" => (2, 3),
                 "&&" => (4, 5),
-                "==" | "!=" => (6, 7),
-                "<" | ">" | "<=" | ">=" => (8, 9),
                 "+" | "-" => (10, 11),
                 "*" | "/" => (12, 13),
                 _ => break,
             };
 
-            if l_bp < min_bp {
-                break;
-            }
+            if l_bp < min_bp { break; }
 
             self.next();
             let right = self.parse_expression(r_bp)?;
 
-            // constant folding
             if let (Expr::Number(lv), Expr::Number(rv)) = (&left, &right) {
                 if let Some(v) = fold_binary(&op, *lv, *rv) {
                     left = Expr::Number(v);
@@ -341,18 +283,6 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
                     return Ok(v);
                 }
                 return Err("bad assignment".into());
-            }
-
-            if op == "&&" {
-                let l = eval(left, env)?;
-                if l == 0 { return Ok(0); }
-                return Ok((eval(right, env)? != 0) as i64);
-            }
-
-            if op == "||" {
-                let l = eval(left, env)?;
-                if l != 0 { return Ok(1); }
-                return Ok((eval(right, env)? != 0) as i64);
             }
 
             let l = eval(left, env)?;
@@ -401,11 +331,53 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
     }
 }
 
+fn repl(env: &mut HashMap<String, i64>) {
+    let stdin = io::stdin();
+    let mut line = String::new();
+
+    loop {
+        print!("> ");
+        io::stdout().flush().unwrap();
+
+        line.clear();
+        if stdin.read_line(&mut line).unwrap() == 0 {
+            break;
+        }
+
+        let line = line.trim();
+        if line.is_empty() { continue; }
+
+        if line == "quit" { break; }
+
+        let tokens = match tokenize(line) {
+            Ok(t) => t,
+            Err(e) => { eprintln!("{}", e); continue; }
+        };
+
+        let mut parser = Parser::new(tokens);
+
+        let expr = match parser.parse_expression(0) {
+            Ok(e) => e,
+            Err(e) => { eprintln!("{}", e); continue; }
+        };
+
+        match eval(&expr, env) {
+            Ok(v) => println!("{}", v),
+            Err(e) => eprintln!("{}", e),
+        }
+    }
+}
+
 fn main() {
+    let mut env = HashMap::new();
+
+    if atty::is(atty::Stream::Stdin) {
+        repl(&mut env);
+        return;
+    }
+
     let mut input = String::new();
     io::stdin().read_to_string(&mut input).unwrap();
-
-    let mut env = HashMap::new();
 
     for line in input.lines() {
         if line.trim().is_empty() { continue; }
