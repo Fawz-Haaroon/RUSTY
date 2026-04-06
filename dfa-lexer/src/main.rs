@@ -1,6 +1,16 @@
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
 
+#[cfg(unix)]
+fn stdin_is_tty() -> bool {
+    unsafe { libc::isatty(libc::STDIN_FILENO) == 1 }
+}
+
+#[cfg(not(unix))]
+fn stdin_is_tty() -> bool {
+    false
+}
+
 #[derive(Debug)]
 enum TokenKind {
     Ident(String),
@@ -59,60 +69,6 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 i += 1;
             }
 
-            '!' => {
-                if i + 1 < chars.len() && chars[i + 1] == '=' {
-                    tokens.push(Token { kind: TokenKind::Operator("!=".into()) });
-                    i += 2;
-                } else {
-                    tokens.push(Token { kind: TokenKind::Operator("!".into()) });
-                    i += 1;
-                }
-            }
-
-            '&' => {
-                if i + 1 < chars.len() && chars[i + 1] == '&' {
-                    tokens.push(Token { kind: TokenKind::Operator("&&".into()) });
-                    i += 2;
-                } else { return Err("unexpected '&'".into()); }
-            }
-
-            '|' => {
-                if i + 1 < chars.len() && chars[i + 1] == '|' {
-                    tokens.push(Token { kind: TokenKind::Operator("||".into()) });
-                    i += 2;
-                } else { return Err("unexpected '|'".into()); }
-            }
-
-            '=' => {
-                if i + 1 < chars.len() && chars[i + 1] == '=' {
-                    tokens.push(Token { kind: TokenKind::Operator("==".into()) });
-                    i += 2;
-                } else {
-                    tokens.push(Token { kind: TokenKind::Operator("=".into()) });
-                    i += 1;
-                }
-            }
-
-            '<' => {
-                if i + 1 < chars.len() && chars[i + 1] == '=' {
-                    tokens.push(Token { kind: TokenKind::Operator("<=".into()) });
-                    i += 2;
-                } else {
-                    tokens.push(Token { kind: TokenKind::Operator("<".into()) });
-                    i += 1;
-                }
-            }
-
-            '>' => {
-                if i + 1 < chars.len() && chars[i + 1] == '=' {
-                    tokens.push(Token { kind: TokenKind::Operator(">=".into()) });
-                    i += 2;
-                } else {
-                    tokens.push(Token { kind: TokenKind::Operator(">".into()) });
-                    i += 1;
-                }
-            }
-
             _ => return Err(format!("invalid character '{}'", chars[i])),
         }
     }
@@ -125,28 +81,11 @@ enum Expr {
     Number(i64),
     Ident(String),
 
-    Unary { op: String, expr: Box<Expr> },
-
     Binary {
         op: String,
         left: Box<Expr>,
         right: Box<Expr>,
     },
-
-    Call {
-        name: String,
-        args: Vec<Expr>,
-    },
-}
-
-fn fold_binary(op: &str, l: i64, r: i64) -> Option<i64> {
-    match op {
-        "+" => Some(l + r),
-        "-" => Some(l - r),
-        "*" => Some(l * r),
-        "/" => if r != 0 { Some(l / r) } else { None },
-        _ => None,
-    }
 }
 
 struct Parser {
@@ -170,88 +109,28 @@ impl Parser {
         Some(token)
     }
 
-    fn parse_call(&mut self, name: String) -> Result<Expr, String> {
-        let mut args = Vec::new();
-
-        loop {
-            if matches!(self.peek(), Some(TokenKind::RParen)) {
-                self.next();
-                break;
-            }
-
-            args.push(self.parse_expression(0)?);
-
-            match self.peek() {
-                Some(TokenKind::Comma) => { self.next(); }
-                Some(TokenKind::RParen) => { self.next(); break; }
-                _ => return Err("bad call".into()),
-            }
-        }
-
-        Ok(Expr::Call { name, args })
-    }
-
-    fn parse_expression(&mut self, min_bp: u8) -> Result<Expr, String> {
-        let mut left = match self.next() {
+    fn parse_expression(&mut self) -> Result<Expr, String> {
+        let left = match self.next() {
             Some(TokenKind::Number(n)) => Expr::Number(n),
-
-            Some(TokenKind::Ident(name)) => {
-                if matches!(self.peek(), Some(TokenKind::LParen)) {
-                    self.next();
-                    self.parse_call(name)?
-                } else {
-                    Expr::Ident(name)
-                }
-            }
-
-            Some(TokenKind::Operator(op)) if op == "-" || op == "+" || op == "!" => {
-                let expr = self.parse_expression(30)?;
-                Expr::Unary { op, expr: Box::new(expr) }
-            }
-
-            Some(TokenKind::LParen) => {
-                let expr = self.parse_expression(0)?;
-                match self.next() {
-                    Some(TokenKind::RParen) => expr,
-                    _ => return Err("expected ')'".into()),
-                }
-            }
-
-            _ => return Err("unexpected".into()),
+            Some(TokenKind::Ident(s)) => Expr::Ident(s),
+            _ => return Err("bad expr".into()),
         };
 
-        loop {
-            let op = match self.peek() {
-                Some(TokenKind::Operator(op)) => op.clone(),
-                _ => break,
-            };
-
-            let (l_bp, r_bp) = match op.as_str() {
-                "=" => (1, 0),
-                "||" => (2, 3),
-                "&&" => (4, 5),
-                "+" | "-" => (10, 11),
-                "*" | "/" => (12, 13),
-                _ => break,
-            };
-
-            if l_bp < min_bp { break; }
-
+        if let Some(TokenKind::Operator(op)) = self.peek() {
+            let op = op.clone();
             self.next();
-            let right = self.parse_expression(r_bp)?;
 
-            if let (Expr::Number(lv), Expr::Number(rv)) = (&left, &right) {
-                if let Some(v) = fold_binary(&op, *lv, *rv) {
-                    left = Expr::Number(v);
-                    continue;
-                }
-            }
+            let right = match self.next() {
+                Some(TokenKind::Number(n)) => Expr::Number(n),
+                Some(TokenKind::Ident(s)) => Expr::Ident(s),
+                _ => return Err("bad rhs".into()),
+            };
 
-            left = Expr::Binary {
+            return Ok(Expr::Binary {
                 op,
                 left: Box::new(left),
                 right: Box::new(right),
-            };
+            });
         }
 
         Ok(left)
@@ -265,26 +144,7 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
         Expr::Ident(name) => env.get(name).copied()
             .ok_or_else(|| format!("undefined '{}'", name)),
 
-        Expr::Unary { op, expr } => {
-            let v = eval(expr, env)?;
-            match op.as_str() {
-                "-" => Ok(-v),
-                "+" => Ok(v),
-                "!" => Ok((v == 0) as i64),
-                _ => Err("bad unary".into()),
-            }
-        }
-
         Expr::Binary { op, left, right } => {
-            if op == "=" {
-                if let Expr::Ident(name) = &**left {
-                    let v = eval(right, env)?;
-                    env.insert(name.clone(), v);
-                    return Ok(v);
-                }
-                return Err("bad assignment".into());
-            }
-
             let l = eval(left, env)?;
             let r = eval(right, env)?;
 
@@ -297,35 +157,6 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
                     Ok(l / r)
                 }
                 _ => Err("bad op".into()),
-            }
-        }
-
-        Expr::Call { name, args } => {
-            if name == "clear" {
-                env.clear();
-                return Ok(0);
-            }
-
-            if name == "env" {
-                for (k,v) in env.iter() {
-                    println!("{} = {}", k, v);
-                }
-                return Ok(env.len() as i64);
-            }
-
-            let mut vals = Vec::new();
-            for a in args {
-                vals.push(eval(a, env)?);
-            }
-
-            match name.as_str() {
-                "print" => {
-                    for v in &vals { println!("{}", v); }
-                    Ok(*vals.last().unwrap_or(&0))
-                }
-                "abs" => Ok(vals[0].abs()),
-                "pow" => Ok(vals[0].pow(vals[1] as u32)),
-                _ => Err("unknown fn".into()),
             }
         }
     }
@@ -345,8 +176,6 @@ fn repl(env: &mut HashMap<String, i64>) {
         }
 
         let line = line.trim();
-        if line.is_empty() { continue; }
-
         if line == "quit" { break; }
 
         let tokens = match tokenize(line) {
@@ -356,7 +185,7 @@ fn repl(env: &mut HashMap<String, i64>) {
 
         let mut parser = Parser::new(tokens);
 
-        let expr = match parser.parse_expression(0) {
+        let expr = match parser.parse_expression() {
             Ok(e) => e,
             Err(e) => { eprintln!("{}", e); continue; }
         };
@@ -371,7 +200,7 @@ fn repl(env: &mut HashMap<String, i64>) {
 fn main() {
     let mut env = HashMap::new();
 
-    if atty::is(atty::Stream::Stdin) {
+    if stdin_is_tty() {
         repl(&mut env);
         return;
     }
@@ -389,7 +218,7 @@ fn main() {
 
         let mut parser = Parser::new(tokens);
 
-        let expr = match parser.parse_expression(0) {
+        let expr = match parser.parse_expression() {
             Ok(e) => e,
             Err(e) => { eprintln!("{}", e); break; }
         };
