@@ -165,6 +165,7 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
 fn repl(env: &mut HashMap<String, i64>) {
     let stdin = io::stdin();
     let mut line = String::new();
+    let mut history: Vec<String> = Vec::new();
 
     loop {
         print!("> ");
@@ -175,10 +176,35 @@ fn repl(env: &mut HashMap<String, i64>) {
             break;
         }
 
-        let line = line.trim();
-        if line == "quit" { break; }
+        let mut line = line.trim().to_string();
 
-        let tokens = match tokenize(line) {
+        if line == "quit" {
+            break;
+        }
+
+        if line == ":history" {
+            for (i, cmd) in history.iter().enumerate() {
+                println!("{}: {}", i, cmd);
+            }
+            continue;
+        }
+
+        if line == "!!" {
+            if let Some(last) = history.last() {
+                line = last.clone();
+                println!("{}", line);
+            } else {
+                continue;
+            }
+        }
+
+        if line.is_empty() {
+            continue;
+        }
+
+        history.push(line.clone());
+
+        let tokens = match tokenize(&line) {
             Ok(t) => t,
             Err(e) => { eprintln!("{}", e); continue; }
         };
