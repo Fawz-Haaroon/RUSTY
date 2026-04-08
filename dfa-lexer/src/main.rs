@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::env;
+use std::fs;
 use std::io::{self, Read, Write};
 
 #[cfg(unix)]
@@ -162,6 +164,27 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
     }
 }
 
+fn execute_line(line: &str, env: &mut HashMap<String, i64>) -> Result<i64, String> {
+    let tokens = tokenize(line)?;
+    let mut parser = Parser::new(tokens);
+    let expr = parser.parse_expression()?;
+    eval(&expr, env)
+}
+
+fn run_script(input: &str, env: &mut HashMap<String, i64>) {
+    for (line_no, line) in input.lines().enumerate() {
+        if line.trim().is_empty() { continue; }
+
+        match execute_line(line, env) {
+            Ok(v) => println!("{}", v),
+            Err(e) => {
+                eprintln!("error at line {}: {}", line_no + 1, e);
+                break;
+            }
+        }
+    }
+}
+
 fn repl(env: &mut HashMap<String, i64>) {
     let stdin = io::stdin();
     let mut line = String::new();
@@ -178,9 +201,7 @@ fn repl(env: &mut HashMap<String, i64>) {
 
         let mut line = line.trim().to_string();
 
-        if line == "quit" {
-            break;
-        }
+        if line == "quit" { break; }
 
         if line == ":history" {
             for (i, cmd) in history.iter().enumerate() {
@@ -198,25 +219,11 @@ fn repl(env: &mut HashMap<String, i64>) {
             }
         }
 
-        if line.is_empty() {
-            continue;
-        }
+        if line.is_empty() { continue; }
 
         history.push(line.clone());
 
-        let tokens = match tokenize(&line) {
-            Ok(t) => t,
-            Err(e) => { eprintln!("{}", e); continue; }
-        };
-
-        let mut parser = Parser::new(tokens);
-
-        let expr = match parser.parse_expression() {
-            Ok(e) => e,
-            Err(e) => { eprintln!("{}", e); continue; }
-        };
-
-        match eval(&expr, env) {
+        match execute_line(&line, env) {
             Ok(v) => println!("{}", v),
             Err(e) => eprintln!("{}", e),
         }
@@ -225,6 +232,20 @@ fn repl(env: &mut HashMap<String, i64>) {
 
 fn main() {
     let mut env = HashMap::new();
+    let args: Vec<String> = env::args().collect();
+
+    if args.len() > 1 {
+        let content = match fs::read_to_string(&args[1]) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("failed to read file: {}", e);
+                return;
+            }
+        };
+
+        run_script(&content, &mut env);
+        return;
+    }
 
     if stdin_is_tty() {
         repl(&mut env);
@@ -233,25 +254,5 @@ fn main() {
 
     let mut input = String::new();
     io::stdin().read_to_string(&mut input).unwrap();
-
-    for line in input.lines() {
-        if line.trim().is_empty() { continue; }
-
-        let tokens = match tokenize(line) {
-            Ok(t) => t,
-            Err(e) => { eprintln!("{}", e); break; }
-        };
-
-        let mut parser = Parser::new(tokens);
-
-        let expr = match parser.parse_expression() {
-            Ok(e) => e,
-            Err(e) => { eprintln!("{}", e); break; }
-        };
-
-        match eval(&expr, &mut env) {
-            Ok(v) => println!("{}", v),
-            Err(e) => { eprintln!("{}", e); break; }
-        }
-    }
+    run_script(&input, &mut env);
 }
