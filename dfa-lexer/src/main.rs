@@ -14,6 +14,18 @@ fn stdin_is_tty() -> bool {
 }
 
 #[derive(Debug)]
+struct Error {
+    msg: String,
+    col: usize,
+}
+
+impl Error {
+    fn new(msg: &str, col: usize) -> Self {
+        Self { msg: msg.into(), col }
+    }
+}
+
+#[derive(Debug)]
 enum TokenKind {
     Ident(String),
     Number(i64),
@@ -26,19 +38,20 @@ enum TokenKind {
 #[derive(Debug)]
 struct Token {
     kind: TokenKind,
+    col: usize,
 }
 
-fn tokenize(input: &str) -> Result<Vec<Token>, String> {
+fn tokenize(input: &str) -> Result<Vec<Token>, Error> {
     let chars: Vec<char> = input.chars().collect();
     let mut i = 0;
     let mut tokens = Vec::new();
 
     while i < chars.len() {
         match chars[i] {
-            ' ' | '\n' | '\t' | '\r' => i += 1,
+            ' ' | '\t' | '\r' => i += 1,
 
             ',' => {
-                tokens.push(Token { kind: TokenKind::Comma });
+                tokens.push(Token { kind: TokenKind::Comma, col: i });
                 i += 1;
             }
 
@@ -50,7 +63,7 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                     i += 1;
                 }
                 let text: String = chars[start..i].iter().collect();
-                tokens.push(Token { kind: TokenKind::Ident(text) });
+                tokens.push(Token { kind: TokenKind::Ident(text), col: start });
             }
 
             '0'..='9' => {
@@ -59,19 +72,22 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                     i += 1;
                 }
                 let text: String = chars[start..i].iter().collect();
-                let value = text.parse::<i64>().map_err(|_| "invalid number")?;
-                tokens.push(Token { kind: TokenKind::Number(value) });
+                let value = text.parse::<i64>().map_err(|_| Error::new("invalid number", start))?;
+                tokens.push(Token { kind: TokenKind::Number(value), col: start });
             }
 
-            '(' => { tokens.push(Token { kind: TokenKind::LParen }); i += 1; }
-            ')' => { tokens.push(Token { kind: TokenKind::RParen }); i += 1; }
+            '(' => { tokens.push(Token { kind: TokenKind::LParen, col: i }); i += 1; }
+            ')' => { tokens.push(Token { kind: TokenKind::RParen, col: i }); i += 1; }
 
             '+' | '-' | '*' | '/' => {
-                tokens.push(Token { kind: TokenKind::Operator(chars[i].to_string()) });
+                tokens.push(Token {
+                    kind: TokenKind::Operator(chars[i].to_string()),
+                    col: i,
+                });
                 i += 1;
             }
 
-            _ => return Err(format!("invalid character '{}'", chars[i])),
+            _ => return Err(Error::new(&format!("invalid character '{}'", chars[i]), i)),
         }
     }
 
@@ -100,39 +116,46 @@ impl Parser {
         Self { tokens, pos: 0 }
     }
 
-    fn peek(&self) -> Option<&TokenKind> {
-        self.tokens.get(self.pos).map(|t| &t.kind)
+    fn peek(&self) -> Option<&Token> {
+        self.tokens.get(self.pos)
     }
 
-    fn next(&mut self) -> Option<TokenKind> {
+    fn next(&mut self) -> Option<Token> {
         if self.pos >= self.tokens.len() { return None; }
-        let token = std::mem::replace(&mut self.tokens[self.pos].kind, TokenKind::Comma);
+        let t = self.tokens[self.pos].clone();
         self.pos += 1;
-        Some(token)
+        Some(t)
     }
 
-    fn parse_expression(&mut self) -> Result<Expr, String> {
-        let left = match self.next() {
-            Some(TokenKind::Number(n)) => Expr::Number(n),
-            Some(TokenKind::Ident(s)) => Expr::Ident(s),
-            _ => return Err("bad expr".into()),
+    fn parse_expression(&mut self) -> Result<Expr, Error> {
+        let left_tok = self.next().ok_or(Error::new("unexpected end", 0))?;
+
+        let left = match left_tok.kind {
+            TokenKind::Number(n) => Expr::Number(n),
+            TokenKind::Ident(s) => Expr::Ident(s),
+            _ => return Err(Error::new("expected value", left_tok.col)),
         };
 
-        if let Some(TokenKind::Operator(op)) = self.peek() {
-            let op = op.clone();
-            self.next();
+        if let Some(op_tok) = self.peek() {
+            if let TokenKind::Operator(op) = &op_tok.kind {
+                let op = op.clone();
+                let col = op_tok.col;
+                self.next();
 
-            let right = match self.next() {
-                Some(TokenKind::Number(n)) => Expr::Number(n),
-                Some(TokenKind::Ident(s)) => Expr::Ident(s),
-                _ => return Err("bad rhs".into()),
-            };
+                let right_tok = self.next().ok_or(Error::new("missing rhs", col))?;
 
-            return Ok(Expr::Binary {
-                op,
-                left: Box::new(left),
-                right: Box::new(right),
-            });
+                let right = match right_tok.kind {
+                    TokenKind::Number(n) => Expr::Number(n),
+                    TokenKind::Ident(s) => Expr::Ident(s),
+                    _ => return Err(Error::new("invalid rhs", right_tok.col)),
+                };
+
+                return Ok(Expr::Binary {
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                });
+            }
         }
 
         Ok(left)
@@ -155,32 +178,56 @@ fn eval(expr: &Expr, env: &mut HashMap<String, i64>) -> Result<i64, String> {
                 "-" => Ok(l - r),
                 "*" => Ok(l * r),
                 "/" => {
-                    if r == 0 { return Err("div by zero".into()); }
+                    if r == 0 { return Err("division by zero".into()); }
                     Ok(l / r)
                 }
-                _ => Err("bad op".into()),
+                _ => Err("unknown operator".into()),
             }
         }
     }
 }
 
-fn execute_line(line: &str, env: &mut HashMap<String, i64>) -> Result<i64, String> {
-    let tokens = tokenize(line)?;
+fn render_error(line: &str, line_no: usize, err: Error) {
+    eprintln!("error at line {}, col {}: {}", line_no, err.col + 1, err.msg);
+    eprintln!("{}", line);
+    eprintln!("{}^", " ".repeat(err.col));
+}
+
+fn execute_line(line: &str, line_no: usize, env: &mut HashMap<String, i64>) -> Result<i64, ()> {
+    let tokens = match tokenize(line) {
+        Ok(t) => t,
+        Err(e) => {
+            render_error(line, line_no, e);
+            return Err(());
+        }
+    };
+
     let mut parser = Parser::new(tokens);
-    let expr = parser.parse_expression()?;
-    eval(&expr, env)
+
+    let expr = match parser.parse_expression() {
+        Ok(e) => e,
+        Err(e) => {
+            render_error(line, line_no, e);
+            return Err(());
+        }
+    };
+
+    match eval(&expr, env) {
+        Ok(v) => Ok(v),
+        Err(e) => {
+            eprintln!("runtime error at line {}: {}", line_no, e);
+            Err(())
+        }
+    }
 }
 
 fn run_script(input: &str, env: &mut HashMap<String, i64>) {
-    for (line_no, line) in input.lines().enumerate() {
+    for (i, line) in input.lines().enumerate() {
         if line.trim().is_empty() { continue; }
 
-        match execute_line(line, env) {
+        match execute_line(line, i + 1, env) {
             Ok(v) => println!("{}", v),
-            Err(e) => {
-                eprintln!("error at line {}: {}", line_no + 1, e);
-                break;
-            }
+            Err(_) => break,
         }
     }
 }
@@ -188,7 +235,6 @@ fn run_script(input: &str, env: &mut HashMap<String, i64>) {
 fn repl(env: &mut HashMap<String, i64>) {
     let stdin = io::stdin();
     let mut line = String::new();
-    let mut history: Vec<String> = Vec::new();
 
     loop {
         print!("> ");
@@ -199,33 +245,13 @@ fn repl(env: &mut HashMap<String, i64>) {
             break;
         }
 
-        let mut line = line.trim().to_string();
-
+        let line = line.trim();
         if line == "quit" { break; }
-
-        if line == ":history" {
-            for (i, cmd) in history.iter().enumerate() {
-                println!("{}: {}", i, cmd);
-            }
-            continue;
-        }
-
-        if line == "!!" {
-            if let Some(last) = history.last() {
-                line = last.clone();
-                println!("{}", line);
-            } else {
-                continue;
-            }
-        }
-
         if line.is_empty() { continue; }
 
-        history.push(line.clone());
-
-        match execute_line(&line, env) {
+        match execute_line(line, 1, env) {
             Ok(v) => println!("{}", v),
-            Err(e) => eprintln!("{}", e),
+            Err(_) => {}
         }
     }
 }
@@ -238,7 +264,7 @@ fn main() {
         let content = match fs::read_to_string(&args[1]) {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("failed to read file: {}", e);
+                eprintln!("file error: {}", e);
                 return;
             }
         };
